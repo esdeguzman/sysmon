@@ -94,15 +94,56 @@ class SysmonApp:
         side.pack_propagate(False)
 
         head = tk.Frame(side, bg=PANEL)
-        head.pack(fill="x", padx=14, pady=(14, 6))
+        head.pack(side="top", fill="x", padx=14, pady=(14, 6))
         tk.Label(head, text="PROCESSES", bg=PANEL, fg=TEXT, font=self.f_head).pack(side="left")
         self.lbl_count = tk.Label(head, text="", bg=PANEL, fg=MUTED, font=self.f_small)
         self.lbl_count.pack(side="right")
 
+        # Everything below the list is packed from the BOTTOM up, before the
+        # list claims its space. pack() hands out room in call order, so a
+        # long advice summary used to push the Optimize button and the Claude
+        # panel off the bottom of the window entirely. Anchored this way they
+        # keep their height whatever the advice says, and the list absorbs
+        # the slack instead.
+        #
+        # Each section gets its own container, and the container is what gets
+        # bottom-packed. Bottom-packing the widgets directly does not work:
+        # their children still pack top-down inside the parent, which put the
+        # Claude panel above the process list and the advice header below its
+        # own text.
+        claude_box = tk.Frame(side, bg=PANEL)
+        claude_box.pack(side="bottom", fill="x")
+        self._build_claude_panel(claude_box)
+
+        self.results = tk.Frame(side, bg=PANEL)
+        self.results.pack(side="bottom", fill="x", padx=14, pady=(0, 10))
+
+        self.btn = tk.Button(
+            side,
+            text="Optimize",
+            command=self.on_optimize,
+            bg="#2a3043",
+            fg=MUTED,
+            activebackground=ACCENT,
+            activeforeground="white",
+            relief="flat",
+            font=self.f_head,
+            pady=8,
+            state="disabled",
+            cursor="arrow",
+        )
+        self.btn.pack(side="bottom", fill="x", padx=14, pady=(8, 6))
+
+        advice_box = tk.Frame(side, bg=PANEL)
+        advice_box.pack(side="bottom", fill="x")
+        self._build_advice_pane(advice_box)
+
+        tk.Frame(side, bg=LINE, height=1).pack(side="bottom", fill="x", padx=14, pady=(8, 0))
+
         # Canvas plus inner frame is the standard Tk scrolling idiom. There
         # are more rows than fit, and a non-scrolling list would hide them.
         wrap = tk.Frame(side, bg=PANEL)
-        wrap.pack(fill="both", expand=True, padx=(10, 4))
+        wrap.pack(side="top", fill="both", expand=True, padx=(10, 4))
         self.canvas = tk.Canvas(wrap, bg=PANEL, highlightthickness=0, bd=0)
         bar = ttk.Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=bar.set)
@@ -119,8 +160,9 @@ class SysmonApp:
         )
         self.canvas.bind_all("<MouseWheel>", self._on_wheel)
 
-        tk.Frame(side, bg=LINE, height=1).pack(fill="x", padx=14, pady=(8, 0))
-        adv_head = tk.Frame(side, bg=PANEL)
+    def _build_advice_pane(self, parent):
+        """The advice section: fixed height, scrollable, bounded."""
+        adv_head = tk.Frame(parent, bg=PANEL)
         adv_head.pack(fill="x", padx=14, pady=(8, 2))
         self.lbl_source = tk.Label(
             adv_head, text="CLAUDE SUGGESTS", bg=PANEL, fg=MUTED, font=self.f_small
@@ -128,45 +170,51 @@ class SysmonApp:
         self.lbl_source.pack(side="left")
         self.lbl_age = tk.Label(adv_head, text="", bg=PANEL, fg=MUTED, font=self.f_small)
         self.lbl_age.pack(side="right")
-        self.lbl_advice = tk.Message(
-            side,
-            text="No advice yet. Ask Claude to check your laptop.",
-            width=320,
+
+        # A Text rather than a Message: a Message grows to fit its content,
+        # which is exactly the behaviour that pushed the controls off screen.
+        box = tk.Frame(parent, bg=PANEL)
+        box.pack(fill="x", padx=14, pady=(2, 0))
+        self.advice_bar = ttk.Scrollbar(box, orient="vertical")
+        self.advice_text = tk.Text(
+            box,
+            height=9,
             bg=PANEL,
-            fg=MUTED,
+            fg=TEXT,
             font=self.f_body,
-            justify="left",
-        )
-        self.lbl_advice.pack(anchor="w", padx=14)
-        self.lbl_notes = tk.Message(
-            side, text="", width=320, bg=PANEL, fg=MUTED, font=self.f_small, justify="left"
-        )
-        self.lbl_notes.pack(anchor="w", padx=14, pady=(4, 0))
-        self.lbl_dead = tk.Message(
-            side, text="", width=320, bg=PANEL, fg=WARN, font=self.f_small, justify="left"
-        )
-        self.lbl_dead.pack(anchor="w", padx=14, pady=(4, 0))
-
-        self.btn = tk.Button(
-            side,
-            text="Optimize",
-            command=self.on_optimize,
-            bg="#2a3043",
-            fg=MUTED,
-            activebackground=ACCENT,
-            activeforeground="white",
             relief="flat",
-            font=self.f_head,
-            pady=8,
+            wrap="word",
             state="disabled",
-            cursor="arrow",
+            highlightthickness=0,
+            padx=0,
+            pady=0,
+            yscrollcommand=lambda *a: self.advice_bar.set(*a),
         )
-        self.btn.pack(fill="x", padx=14, pady=(10, 6))
+        self.advice_bar.configure(command=self.advice_text.yview)
+        # Packed once, before the text, and left there. Two reasons:
+        # the text is packed with expand=True so it claims all remaining
+        # width the moment it is packed, leaving a later scrollbar a
+        # zero-width parcel; and auto-hiding it meant re-deciding on every
+        # content change against a yview() that Tk has not recomputed yet.
+        # A trough with nothing in it is a fair price for neither bug.
+        self.advice_bar.pack(side="right", fill="y")
+        self.advice_text.pack(side="left", fill="both", expand=True)
+        self.advice_text.tag_configure("summary", foreground=TEXT, spacing3=6)
+        self.advice_text.tag_configure("stale", foreground=MUTED, spacing3=6)
+        self.advice_text.tag_configure("notes", foreground=MUTED, spacing3=4)
+        self.advice_text.tag_configure("dead", foreground=WARN, spacing3=4)
 
-        self.results = tk.Frame(side, bg=PANEL)
-        self.results.pack(fill="x", padx=14, pady=(0, 12))
-
-        self._build_claude_panel(side)
+    def _set_advice(self, summary, summary_tag, notes, dead):
+        self.advice_text.configure(state="normal")
+        self.advice_text.delete("1.0", "end")
+        if summary:
+            self.advice_text.insert("end", summary + "\n", summary_tag)
+        if dead:
+            self.advice_text.insert("end", dead + "\n", "dead")
+        if notes:
+            self.advice_text.insert("end", notes, "notes")
+        self.advice_text.configure(state="disabled")
+        self.advice_text.yview_moveto(0.0)
 
     def _build_claude_panel(self, side):
         tk.Frame(side, bg=LINE, height=1).pack(fill="x", padx=14, pady=(4, 0))
@@ -291,7 +339,22 @@ class SysmonApp:
         return {"value": value, "fill": fill, "color": color}
 
     def _on_wheel(self, event):
-        self.canvas.yview_scroll(int(-event.delta / 120), "units")
+        """Route the wheel to whichever pane the cursor is actually over.
+
+        The binding is bind_all, so without this every wheel turn scrolls
+        the process list even while the cursor sits in the advice text.
+        """
+        steps = int(-event.delta / 120)
+        widget = event.widget
+        while widget is not None:
+            if widget is getattr(self, "advice_text", None):
+                self.advice_text.yview_scroll(steps, "units")
+                return "break"
+            if widget is getattr(self, "claude_out", None):
+                self.claude_out.yview_scroll(steps, "units")
+                return "break"
+            widget = getattr(widget, "master", None)
+        self.canvas.yview_scroll(steps, "units")
 
     # ----------------------------------------------------------------- state
 
@@ -542,9 +605,7 @@ class SysmonApp:
             # always know whether they are reading judgement or a rule.
             self.lbl_source.configure(text="BUILT-IN RULES", fg=WARN)
             self.lbl_age.configure(text="no Claude session", fg=MUTED)
-            self.lbl_advice.configure(text=local["summary"], fg=TEXT)
-            self.lbl_notes.configure(text=local["notes"])
-            self.lbl_dead.configure(text="")
+            self._set_advice(local["summary"], "summary", local["notes"], "")
             return
 
         self.lbl_source.configure(text="CLAUDE SUGGESTS", fg=MUTED)
@@ -554,10 +615,8 @@ class SysmonApp:
                 if advice.get("error")
                 else "No advice yet. Ask Claude to check your laptop."
             )
-            self.lbl_advice.configure(text=text, fg=MUTED)
-            self.lbl_notes.configure(text="")
-            self.lbl_dead.configure(text="")
             self.lbl_age.configure(text="")
+            self._set_advice(text, "stale", "", "")
             return
 
         # Stale advice is greyed rather than hidden. It may still be right,
@@ -566,19 +625,20 @@ class SysmonApp:
             text=f"{age['label']} · stale" if age["stale"] else age["label"],
             fg=WARN if age["stale"] else MUTED,
         )
-        self.lbl_advice.configure(
-            text=advice.get("summary") or "Claude wrote advice with no summary.",
-            fg=MUTED if age["stale"] else TEXT,
-        )
-        self.lbl_notes.configure(text=advice.get("notes") or "")
 
-        notes = []
+        warnings = []
         if dead:
             shown = ", ".join(dead[:3]) + (" and more" if len(dead) > 3 else "")
-            notes.append(f"{shown} no longer running")
+            warnings.append(f"{shown} no longer running")
         if age["expired"]:
-            notes.append("Ask Claude for a fresh check.")
-        self.lbl_dead.configure(text="  ".join(notes))
+            warnings.append("Ask Claude for a fresh check.")
+
+        self._set_advice(
+            advice.get("summary") or "Claude wrote advice with no summary.",
+            "stale" if age["stale"] else "summary",
+            advice.get("notes") or "",
+            "  ".join(warnings),
+        )
 
     def _update_button(self, snapshot):
         if self.busy:
