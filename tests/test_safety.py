@@ -65,6 +65,17 @@ class TestBlocklist:
         assert ok is False
         assert "system-critical" in reason
 
+    def test_claude_is_rejected_even_when_not_an_ancestor(self):
+        # Launched from Explorer, run.cmd has no Claude session in its
+        # ancestry, so the blocklist is the only thing protecting it.
+        snapshot = [proc(1234, "claude.exe")]
+        protected = safety.protected_pids(own_pid=9000, ancestor_pids=[])
+        ok, reason = safety.check_target(
+            {"pid": 1234, "create_time": 1000.0}, snapshot, protected
+        )
+        assert ok is False
+        assert "system-critical" in reason
+
     def test_pid_4_is_rejected(self):
         ok, reason = safety.check_target(
             {"pid": 4, "create_time": 1000.0}, SNAPSHOT, PROTECTED

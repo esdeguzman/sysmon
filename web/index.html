@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sysmon</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <header class="sidebar-head">
+        <h1>Processes</h1>
+        <span id="proc-count" class="muted"></span>
+      </header>
+      <div id="process-list" class="process-list"></div>
+
+      <section class="advice" id="advice">
+        <h2>Claude suggests</h2>
+        <div id="advice-body" class="advice-body muted">
+          No advice yet. Ask Claude to check your laptop.
+        </div>
+      </section>
+
+      <button id="optimize" class="optimize" disabled>Optimize</button>
+      <div id="results" class="results"></div>
+    </aside>
+
+    <main class="main">
+      <section class="meters">
+        <div class="meter">
+          <div class="meter-label">RAM</div>
+          <div class="meter-value" id="ram-value">&mdash;</div>
+          <div class="bar"><div class="bar-fill" id="ram-bar"></div></div>
+        </div>
+        <div class="meter">
+          <div class="meter-label">CPU</div>
+          <div class="meter-value" id="cpu-value">&mdash;</div>
+          <div class="bar"><div class="bar-fill cpu" id="cpu-bar"></div></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Watching</h2>
+        <div id="window-info" class="muted"></div>
+        <table class="trend-table">
+          <thead>
+            <tr><th>Process</th><th>RAM</th><th>CPU</th><th>Idle</th><th>Trend</th></tr>
+          </thead>
+          <tbody id="trend-body"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

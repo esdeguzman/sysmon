@@ -41,6 +41,11 @@ BLOCKED_NAMES = frozenset(
         "audiodg.exe",
         "sihost.exe",
         "explorer.exe",
+        # Not a Windows process, but killing it ends the Claude Code session
+        # that writes the advice file. The ancestor check already covers this
+        # when the monitor is started from that session, and does not when
+        # run.cmd is launched from Explorer, which is the documented path.
+        "claude.exe",
     }
 )
 
