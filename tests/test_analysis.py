@@ -114,14 +114,17 @@ class TestGroupProcesses:
 
 class TestBuildFacts:
     def test_empty_buffer_returns_empty_groups(self):
-        facts = analysis.build_facts([], {"percent": 50.0}, SAMPLE_INTERVAL)
+        facts = analysis.build_facts([], [], {"percent": 50.0}, SAMPLE_INTERVAL)
         assert facts["groups"] == []
         assert facts["sample_count"] == 0
 
     def test_facts_attach_idle_and_trend_per_group(self):
         s1 = [{"pid": 1, "name": "a.exe", "rss": 100, "cpu_percent": 0.0}]
         s2 = [{"pid": 1, "name": "a.exe", "rss": 200, "cpu_percent": 0.0}]
-        facts = analysis.build_facts([s1, s2], {"percent": 50.0}, 2.0)
+        facts = analysis.build_facts(
+            [analysis.aggregate_sample(s1), analysis.aggregate_sample(s2)], s2,
+            {"percent": 50.0}, 2.0,
+        )
         group = facts["groups"][0]
         assert group["idle_seconds"] == 4.0
         assert "rss_trend" in group
@@ -133,7 +136,9 @@ class TestBuildFacts:
         # a process present only in an older sample must not appear
         s1 = [{"pid": 1, "name": "gone.exe", "rss": 100, "cpu_percent": 0.0}]
         s2 = [{"pid": 2, "name": "here.exe", "rss": 100, "cpu_percent": 0.0}]
-        facts = analysis.build_facts([s1, s2], {}, 2.0)
+        facts = analysis.build_facts(
+            [analysis.aggregate_sample(s1), analysis.aggregate_sample(s2)], s2, {}, 2.0
+        )
         assert [g["name"] for g in facts["groups"]] == ["here.exe"]
 
 
@@ -161,8 +166,9 @@ class TestBuildFactsScales:
         import time
 
         buf = self._buffer(depth=450, procs=345, groups=103)
+        history = [analysis.aggregate_sample(s) for s in buf]
         start = time.perf_counter()
-        facts = analysis.build_facts(buf, {}, 2.0)
+        facts = analysis.build_facts(history, buf[-1], {}, 2.0)
         elapsed = time.perf_counter() - start
         assert len(facts["groups"]) == 103
         assert elapsed < 1.0, f"build_facts took {elapsed:.2f}s at full buffer depth"
@@ -173,14 +179,44 @@ class TestBuildFactsScales:
             {"pid": 1, "name": "a.exe", "rss": 100, "cpu_percent": 1.0},
             {"pid": 2, "name": "a.exe", "rss": 200, "cpu_percent": 2.0},
         ]
-        facts = analysis.build_facts([s1, s1], {}, 2.0)
+        facts = analysis.build_facts(
+            [analysis.aggregate_sample(s1)] * 2, s1, {}, 2.0
+        )
         assert facts["groups"][0]["rss"] == 300
 
     def test_a_group_absent_from_an_old_sample_reads_zero(self):
         s1 = [{"pid": 1, "name": "old.exe", "rss": 100, "cpu_percent": 0.0}]
         s2 = [{"pid": 2, "name": "new.exe", "rss": 500, "cpu_percent": 0.0}]
-        facts = analysis.build_facts([s1, s2], {}, 2.0)
+        facts = analysis.build_facts(
+            [analysis.aggregate_sample(s1), analysis.aggregate_sample(s2)], s2, {}, 2.0
+        )
         group = facts["groups"][0]
         assert group["name"] == "new.exe"
         # rss went 0 -> 500 across the window, so the trend must be positive
         assert group["rss_trend"] > 0
+
+
+class TestAggregateSample:
+    """What the ring buffer actually stores."""
+
+    def test_sums_processes_sharing_a_name(self):
+        rows = [
+            {"name": "chrome.exe", "rss": 100, "cpu_percent": 1.0},
+            {"name": "chrome.exe", "rss": 200, "cpu_percent": 2.0},
+        ]
+        assert analysis.aggregate_sample(rows) == {"chrome.exe": (300, 3.0)}
+
+    def test_lowercases_names(self):
+        rows = [{"name": "Chrome.EXE", "rss": 5, "cpu_percent": 0.0}]
+        assert "chrome.exe" in analysis.aggregate_sample(rows)
+
+    def test_empty_sample_is_an_empty_dict(self):
+        assert analysis.aggregate_sample([]) == {}
+
+    def test_result_holds_no_per_process_detail(self):
+        # the whole point: history must not retain pids or create_times
+        rows = [{"name": "a.exe", "rss": 1, "cpu_percent": 0.0, "pid": 7,
+                 "create_time": 123.0}]
+        value = analysis.aggregate_sample(rows)["a.exe"]
+        assert value == (1, 0.0)
+        assert len(value) == 2

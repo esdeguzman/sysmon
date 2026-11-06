@@ -28,7 +28,7 @@ class FakeSampler:
     def latest(self):
         return []
 
-    def buffer_list(self):
+    def history(self):
         return []
 
     def totals(self):

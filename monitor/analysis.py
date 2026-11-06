@@ -88,50 +88,57 @@ def group_processes(sample):
     return groups
 
 
-def build_facts(buffer, totals, interval):
-    """Combine the newest sample with per-group history from the whole buffer."""
-    if not buffer:
+def aggregate_sample(rows):
+    """Collapse one sample's process rows to {name: (rss, cpu)}.
+
+    This is what the ring buffer stores. Keeping the raw rows for all 450
+    samples cost 45 MB on a 346-process machine; the aggregates cost 5.6.
+    Nothing reads per-process detail out of history anyway: only the
+    newest sample needs pids and create_times, and that is kept separately.
+    """
+    totals_by_name = {}
+    for proc in rows:
+        key = proc.get("name", "").lower()
+        entry = totals_by_name.get(key)
+        if entry is None:
+            totals_by_name[key] = [proc.get("rss", 0), proc.get("cpu_percent", 0.0)]
+        else:
+            entry[0] += proc.get("rss", 0)
+            entry[1] += proc.get("cpu_percent", 0.0)
+    return {name: tuple(value) for name, value in totals_by_name.items()}
+
+
+def build_facts(history, latest_rows, totals, interval):
+    """Per-app totals from the newest sample, trends from the aggregates.
+
+    `history` is a list of aggregate_sample results, oldest first.
+    `latest_rows` is the newest sample's full process rows, which is where
+    pids and counts come from.
+    """
+    if not latest_rows:
         return {
             "groups": [],
             "totals": totals,
-            "sample_count": 0,
-            "window_seconds": 0.0,
+            "sample_count": len(history),
+            "window_seconds": len(history) * interval,
         }
 
-    latest = buffer[-1]
-    groups = group_processes(latest)
-
-    # Each sample is aggregated by name ONCE, then every group indexes into
-    # the result. Scanning the buffer per group instead is
-    # O(groups x samples x processes): 5.5 seconds at a full 15 minute
-    # buffer on 345 processes, which froze the 2 second UI refresh.
-    per_sample = []
-    for sample in buffer:
-        totals_by_name = {}
-        for proc in sample:
-            key = proc.get("name", "").lower()
-            entry = totals_by_name.get(key)
-            if entry is None:
-                totals_by_name[key] = [proc.get("rss", 0), proc.get("cpu_percent", 0.0)]
-            else:
-                entry[0] += proc.get("rss", 0)
-                entry[1] += proc.get("cpu_percent", 0.0)
-        per_sample.append(totals_by_name)
+    groups = group_processes(latest_rows)
 
     absent = (0, 0.0)
     for group in groups:
         name = group["name"]
-        history = []
-        for totals_by_name in per_sample:
-            rss, cpu = totals_by_name.get(name, absent)
-            history.append({"rss": rss, "cpu_percent": cpu})
-        group["idle_seconds"] = idle_seconds(history, interval)
-        group["rss_trend"] = round(rss_trend_mb_per_min(history, interval), 2)
-        group["growing"] = is_growing(history, interval)
+        series = []
+        for sample in history:
+            rss, cpu = sample.get(name, absent)
+            series.append({"rss": rss, "cpu_percent": cpu})
+        group["idle_seconds"] = idle_seconds(series, interval)
+        group["rss_trend"] = round(rss_trend_mb_per_min(series, interval), 2)
+        group["growing"] = is_growing(series, interval)
 
     return {
         "groups": groups,
         "totals": totals,
-        "sample_count": len(buffer),
-        "window_seconds": len(buffer) * interval,
+        "sample_count": len(history),
+        "window_seconds": len(history) * interval,
     }

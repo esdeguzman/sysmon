@@ -33,7 +33,12 @@ _CHEAP_FIELDS = ["pid", "name", "create_time"]
 class Sampler:
     def __init__(self, interval=SAMPLE_INTERVAL, depth=BUFFER_DEPTH):
         self.interval = interval
+        # History holds per-name aggregates, not raw rows. Keeping full
+        # rows for all 450 samples cost 45 MB on a 346-process machine;
+        # the aggregates cost 5.6. Only the newest sample needs pids and
+        # create_times, and that is _latest.
         self._buffer = deque(maxlen=depth)
+        self._latest = []
         self._procs = {}
         self._totals = {}
         self._cpu_prev = {}
@@ -145,7 +150,8 @@ class Sampler:
         }
 
         with self._lock:
-            self._buffer.append(rows)
+            self._buffer.append(analysis.aggregate_sample(rows))
+            self._latest = rows
             self._totals = totals
             self._facts = None  # stale the instant new data lands
 
@@ -213,12 +219,14 @@ class Sampler:
         os.replace(tmp, SNAPSHOT_PATH)
 
     def latest(self):
+        """The newest sample's full rows, with pids and create_times."""
         with self._lock:
-            return list(self._buffer[-1]) if self._buffer else []
+            return list(self._latest)
 
-    def buffer_list(self):
+    def history(self):
+        """Per-name aggregates, oldest first. No per-process detail."""
         with self._lock:
-            return [list(sample) for sample in self._buffer]
+            return list(self._buffer)
 
     def totals(self):
         with self._lock:
@@ -238,7 +246,9 @@ class Sampler:
         return self._build_facts()
 
     def _build_facts(self):
-        facts = analysis.build_facts(self.buffer_list(), self.totals(), self.interval)
+        facts = analysis.build_facts(
+            self.history(), self.latest(), self.totals(), self.interval
+        )
         # members carry no information the UI needs and triple the payload
         for group in facts["groups"]:
             group.pop("members", None)

@@ -32,8 +32,10 @@ class FakeSampler:
     def latest(self):
         return self._rows
 
-    def buffer_list(self):
-        return [self._rows]
+    def history(self):
+        from monitor import analysis
+
+        return [analysis.aggregate_sample(self._rows)]
 
     def totals(self):
         return {"ram_percent": 50.0, "cpu_percent": 10.0}
@@ -41,7 +43,9 @@ class FakeSampler:
     def facts(self):
         from monitor import analysis
 
-        return analysis.build_facts(self.buffer_list(), self.totals(), self.interval)
+        return analysis.build_facts(
+            self.history(), self.latest(), self.totals(), self.interval
+        )
 
 
 PROTECTED = safety.protected_pids(own_pid=9000, ancestor_pids=[8000])
