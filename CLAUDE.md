@@ -19,9 +19,15 @@ advice file. No API call is involved.
 executable with summed RSS across its processes, plus `idle_seconds`,
 `rss_trend` in MB per minute, `growing`, and the member `pids`.
 
-Per-process rows with `create_time` are not in that file. Get them with:
+`data/snapshot.json` also holds `processes`: the top 80 rows by memory, each
+with `pid`, `name`, `rss`, `create_time` and `cpu_percent`.
 
-    python -c "from monitor.sampler import Sampler; import json; print(json.dumps(Sampler().sample()[:5], indent=2))"
+**Always copy `pid` and `create_time` from `processes`. Never carry them
+forward from a previous `advice.json`.** A stale `create_time` is rejected by
+the PID reuse guard the moment that process has restarted, so the target
+silently does nothing when the user presses Optimize. The first live headless
+run did exactly this, because `processes` did not exist yet and a `claude -p`
+run has Read and Write only.
 
 ## Writing advice
 
@@ -68,7 +74,7 @@ the user untick.
 
     python -m pytest
 
-203 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+207 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -121,6 +127,19 @@ catch. `test_timeout_kills_a_runaway` caught that and guards it.
 
 `shutil.which` resolves to `claude.CMD`, a batch file. Verified that `Popen`
 launches it and captures its output.
+
+**What two real runs measured.** 97s and 85s wall clock, both exit 0, both
+rewrote `advice.json`. The timeout is 420s on that evidence. Run one revealed
+the `processes` gap: with Read and Write only there was no live `create_time`
+anywhere, so it copied one from the previous advice file. It passed safety by
+luck, because that process had not restarted. Run two, with `processes` in the
+snapshot, copied live values for both targets and both passed the live safety
+check.
+
+**Known limit:** `processes` is capped at the top 80 rows by memory, which on
+this machine bottoms out around 90 MB. Claude noticed and said so rather than
+guessing: smaller leftovers have no live `create_time` and cannot be targeted.
+Raise `SNAPSHOT_PROCESS_ROWS` if that starts to matter.
 
 ## It analyses itself when Claude is absent
 

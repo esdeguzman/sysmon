@@ -152,14 +152,19 @@ CAUTION_NAMES = frozenset(
 
 # Running the Claude Code CLI from inside the app. Every run is a fresh
 # session that spends plan tokens, so it is button-driven by default.
-CLAUDE_TIMEOUT_SECONDS = 180
+CLAUDE_TIMEOUT_SECONDS = 420  # a real run measured 97s; leave headroom
 CLAUDE_AUTO_COOLDOWN_SECONDS = 1800  # 30 min, so a stuck-high machine cannot loop
 CLAUDE_AUTO_RAM_PERCENT = CRITICAL_RAM_PERCENT  # only at critical pressure
 CLAUDE_MAX_OUTPUT_LINES = 400
 
 CLAUDE_PROMPT = (
-    "Check this laptop. Read data/snapshot.json for the current state, then "
-    "write data/advice.json following the contract in CLAUDE.md. Keep the "
-    "summary to two sentences. Say in notes what you deliberately left alone "
-    "and why. Do not target anything in BLOCKED_NAMES."
+    "Check this laptop. Read data/snapshot.json: `facts.groups` has the "
+    "per-app totals with idle_seconds and rss_trend, and `processes` has the "
+    "live per-process rows. Copy pid and create_time for every target from "
+    "`processes`, never from a previous advice file, because a stale "
+    "create_time is rejected by the PID reuse guard. Then write "
+    "data/advice.json following the contract in CLAUDE.md. Keep the summary "
+    "to two sentences. Say in notes what you deliberately left alone and "
+    "why. Do not target anything in BLOCKED_NAMES."
 )
+SNAPSHOT_PROCESS_ROWS = 80  # enough to cover anything worth closing

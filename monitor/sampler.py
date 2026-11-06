@@ -20,6 +20,7 @@ from monitor.constants import (
     DATA_DIR,
     SAMPLE_INTERVAL,
     SNAPSHOT_PATH,
+    SNAPSHOT_PROCESS_ROWS,
 )
 
 _FIELDS = ["pid", "name", "memory_info", "cpu_percent", "create_time", "username"]
@@ -118,12 +119,35 @@ class Sampler:
         return rows
 
     def _write_snapshot(self, rows, totals):
-        """Atomic write, so Claude never reads a half-written file."""
+        """Atomic write, so Claude never reads a half-written file.
+
+        `processes` is here because a headless `claude -p` run has Read and
+        Write only. Without per-process rows it cannot learn any
+        create_time, and the advice contract requires one per target. The
+        first live run copied a stale create_time from the previous advice
+        file, which the PID reuse guard rejects the moment that process has
+        restarted.
+
+        Rows without a create_time are excluded: those are access-denied
+        processes, which can never be targets anyway.
+        """
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        targetable = [r for r in rows if r.get("create_time") is not None]
+        targetable.sort(key=lambda r: r.get("rss", 0), reverse=True)
         payload = {
             "sampled_at": totals["sampled_at"],
             "totals": totals,
             "facts": self.facts(),
+            "processes": [
+                {
+                    "pid": r["pid"],
+                    "name": r["name"],
+                    "rss": r["rss"],
+                    "create_time": r["create_time"],
+                    "cpu_percent": r["cpu_percent"],
+                }
+                for r in targetable[:SNAPSHOT_PROCESS_ROWS]
+            ],
         }
         tmp = SNAPSHOT_PATH.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")

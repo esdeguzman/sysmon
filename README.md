@@ -102,5 +102,5 @@ the Optimize button are all local. Only new advice needs you to ask.
 
     python -m pytest
 
-203 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
+207 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
 so the run takes about 6 seconds.
