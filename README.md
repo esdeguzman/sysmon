@@ -49,6 +49,19 @@ often is one you stop seeing.
 Focusing the window stops the flash. A standing condition re-flashes at most
 once every 15 minutes.
 
+## Asking Claude from inside the app
+
+The sidebar has a CLAUDE panel with a dot that blinks green while a run is
+alive, one button that starts and stops it, and a read-only pane showing what
+Claude is doing. It runs the `claude` CLI you already have installed, so there
+is no API key involved.
+
+Each press is a fresh session that spends plan tokens, so nothing runs unless
+you press it. The one exception is RAM at or above 94 percent, where it asks
+once on its own, with a 30 minute cooldown.
+
+It is given Read and Write only, and never a permission bypass flag.
+
 ## It works without Claude
 
 When there is no advice file, or it is over 2 hours old, the app falls back to
@@ -89,5 +102,5 @@ the Optimize button are all local. Only new advice needs you to ask.
 
     python -m pytest
 
-183 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
+203 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
 so the run takes about 6 seconds.

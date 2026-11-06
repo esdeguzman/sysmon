@@ -149,3 +149,17 @@ CAUTION_NAMES = frozenset(
         "msedgewebview2.exe",
     }
 )
+
+# Running the Claude Code CLI from inside the app. Every run is a fresh
+# session that spends plan tokens, so it is button-driven by default.
+CLAUDE_TIMEOUT_SECONDS = 180
+CLAUDE_AUTO_COOLDOWN_SECONDS = 1800  # 30 min, so a stuck-high machine cannot loop
+CLAUDE_AUTO_RAM_PERCENT = CRITICAL_RAM_PERCENT  # only at critical pressure
+CLAUDE_MAX_OUTPUT_LINES = 400
+
+CLAUDE_PROMPT = (
+    "Check this laptop. Read data/snapshot.json for the current state, then "
+    "write data/advice.json following the contract in CLAUDE.md. Keep the "
+    "summary to two sentences. Say in notes what you deliberately left alone "
+    "and why. Do not target anything in BLOCKED_NAMES."
+)

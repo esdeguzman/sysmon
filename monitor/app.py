@@ -17,7 +17,15 @@ import psutil
 from tkinter import font as tkfont
 from tkinter import ttk
 
-from monitor import attention, flash, killer, local_analysis, safety, viewmodel as vm
+from monitor import (
+    attention,
+    claude_runner,
+    flash,
+    killer,
+    local_analysis,
+    safety,
+    viewmodel as vm,
+)
 from monitor.advice import read_advice
 from monitor.constants import ADVICE_PATH, BLOCKED_NAMES, BLOCKED_PIDS
 from monitor.sampler import Sampler
@@ -55,6 +63,8 @@ class SysmonApp:
         self._row_widgets = []
         self.alert_state = attention.AlertState()
         self.alerting = False
+        self.runner = claude_runner.ClaudeRunner()
+        self._blink_on = False
 
         own_pid, ancestors = sampler.own_context()
         self.protected = safety.protected_pids(own_pid, ancestors)
@@ -74,6 +84,7 @@ class SysmonApp:
         # Looking at the window is the acknowledgement. Stop the flash.
         root.bind("<FocusIn>", self._on_focus)
         self.refresh()
+        self._poll_claude()
 
     # ---------------------------------------------------------------- layout
 
@@ -154,6 +165,52 @@ class SysmonApp:
 
         self.results = tk.Frame(side, bg=PANEL)
         self.results.pack(fill="x", padx=14, pady=(0, 12))
+
+        self._build_claude_panel(side)
+
+    def _build_claude_panel(self, side):
+        tk.Frame(side, bg=LINE, height=1).pack(fill="x", padx=14, pady=(4, 0))
+        head = tk.Frame(side, bg=PANEL)
+        head.pack(fill="x", padx=14, pady=(8, 2))
+        # The dot blinks only while a run is in flight, so a glance tells
+        # you whether anything is actually happening.
+        self.lbl_dot = tk.Label(
+            head, text="●", bg=PANEL, fg=MUTED, font=self.f_body
+        )
+        self.lbl_dot.pack(side="left")
+        tk.Label(head, text=" CLAUDE", bg=PANEL, fg=TEXT, font=self.f_head).pack(side="left")
+        self.lbl_claude_status = tk.Label(
+            head, text="", bg=PANEL, fg=MUTED, font=self.f_small
+        )
+        self.lbl_claude_status.pack(side="right")
+
+        self.btn_claude = tk.Button(
+            side,
+            text="Ask Claude",
+            command=self.on_claude,
+            bg="#2a3043",
+            fg=TEXT,
+            activebackground=GOOD,
+            activeforeground="white",
+            relief="flat",
+            font=self.f_body,
+            pady=5,
+            cursor="hand2",
+        )
+        self.btn_claude.pack(fill="x", padx=14, pady=(4, 4))
+
+        self.claude_out = tk.Text(
+            side,
+            height=6,
+            bg="#0d0f15",
+            fg=MUTED,
+            font=("Consolas", 8),
+            relief="flat",
+            wrap="word",
+            state="disabled",
+            highlightthickness=0,
+        )
+        self.claude_out.pack(fill="x", padx=14, pady=(0, 12))
 
     def _build_main(self):
         main = tk.Frame(self.root, bg=BG)
@@ -271,6 +328,7 @@ class SysmonApp:
             self._render_advice(advice, age, vm.dead_targets(advice, snapshot), local)
             self._update_button(snapshot)
             self._evaluate_attention(advice, totals, groups, snapshot, age, local)
+            self._maybe_auto_claude(totals)
         except Exception as exc:  # a render fault must not stop the clock
             self.lbl_window.configure(text=f"refresh error: {exc}")
         self.root.after(REFRESH_MS, self.refresh)
@@ -376,6 +434,65 @@ class SysmonApp:
                 ),
                 tags=(state,),
             )
+
+    # ---------------------------------------------------------------- claude
+
+    def on_claude(self):
+        """One button: starts a run, or stops the one in flight."""
+        if self.runner.is_running():
+            self.runner.stop()
+            return
+        started, message = self.runner.start()
+        if not started:
+            self._append_claude(message)
+
+    def _poll_claude(self):
+        """Drain the runner queue on the main thread. Tk is not thread safe."""
+        try:
+            for line in self.runner.drain():
+                self._append_claude(line)
+
+            running = self.runner.is_running()
+            if running:
+                self._blink_on = not self._blink_on
+                self.lbl_dot.configure(fg=GOOD if self._blink_on else "#1e3a2c")
+                self.lbl_claude_status.configure(text="alive", fg=GOOD)
+                self.btn_claude.configure(text="Stop Claude", fg=WARN)
+            else:
+                status = self.runner.last_status
+                self.lbl_dot.configure(
+                    fg={"done": GOOD, "failed": BAD, "stopped": WARN}.get(status, MUTED)
+                )
+                self.lbl_claude_status.configure(
+                    text="" if status == "idle" else status,
+                    fg=BAD if status == "failed" else MUTED,
+                )
+                self.btn_claude.configure(text="Ask Claude", fg=TEXT)
+        except Exception as exc:
+            self._append_claude(f"panel error: {exc}")
+        self.root.after(500, self._poll_claude)
+
+    def _append_claude(self, line):
+        self.claude_out.configure(state="normal")
+        self.claude_out.insert("end", line + "\n")
+        # Keep the pane bounded. An unbounded Text widget grows forever.
+        if int(self.claude_out.index("end-1c").split(".")[0]) > 200:
+            self.claude_out.delete("1.0", "50.0")
+        self.claude_out.see("end")
+        self.claude_out.configure(state="disabled")
+
+    def _maybe_auto_claude(self, totals):
+        """Critical pressure is the one case worth spending a session unasked."""
+        if not self.runner.available():
+            return
+        if claude_runner.should_auto_run(
+            totals.get("ram_percent") or 0.0,
+            self.runner.is_running(),
+            self.runner.last_run,
+            time.monotonic(),
+        ):
+            self._append_claude("RAM critical, asking Claude automatically")
+            self.runner.start()
 
     # ------------------------------------------------------------- attention
 
@@ -563,11 +680,12 @@ def main():
     sampler = Sampler()
     sampler.start()
     root = tk.Tk()
-    SysmonApp(root, sampler)
+    app = SysmonApp(root, sampler)
     try:
         root.mainloop()
     finally:
         sampler.stop()
+        app.runner.stop()  # never leave a claude session orphaned
     return 0
 
 

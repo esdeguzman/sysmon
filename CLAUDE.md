@@ -68,7 +68,7 @@ the user untick.
 
     python -m pytest
 
-183 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+203 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -94,6 +94,33 @@ left the sampler permanently behind. The fix took it to 116 ms.
 
 `tests/test_analysis.py::TestBuildFactsScales` guards it. If that test starts
 failing, the loops have been inverted back.
+
+## The app can run Claude itself
+
+`monitor/claude_runner.py` spawns `claude -p` as a child process and the
+sidebar shows a dot that blinks green while it is alive. One button starts a
+run and stops the one in flight. Output streams into a read-only pane.
+
+    claude -p "<CLAUDE_PROMPT>" --allowedTools Read Write --output-format text
+
+Run with `cwd` set to the project root, so this file is auto-discovered and
+the advice contract comes with it. **Only Read and Write are allowed, and no
+permission bypass flag is ever passed.** In print mode a tool that is not
+allowed is refused rather than prompting, so a headless run cannot hang
+waiting for an answer nobody is there to give. `TestBuildCommand` asserts the
+bypass flags are absent.
+
+Every run is a fresh session that spends plan tokens, so it is button-driven.
+The single exception is RAM at or above the critical threshold, with a 30
+minute cooldown so a machine stuck at 95 percent cannot loop.
+
+**The timeout needs its own thread.** Checking the clock inside the stdout
+reader only works while the child keeps printing: one that hangs silently
+blocks on `readline` forever, which is the exact case a timeout exists to
+catch. `test_timeout_kills_a_runaway` caught that and guards it.
+
+`shutil.which` resolves to `claude.CMD`, a batch file. Verified that `Popen`
+launches it and captures its output.
 
 ## It analyses itself when Claude is absent
 
