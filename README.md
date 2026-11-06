@@ -5,10 +5,12 @@ sidebar that renders Claude Code's kill plan behind an Optimize button.
 
 ## Running it
 
+    pip install -r requirements.txt
     run.cmd
 
 That opens the window. One process, measured at 37 MB, no browser and no
-server. Nothing to install: Python's standard library plus `psutil`.
+server. It needs Python on PATH. The app itself is Python's standard library
+plus `psutil`; `pytest` is only for the tests.
 
 ## Why not a web page
 
@@ -102,5 +104,5 @@ the Optimize button are all local. Only new advice needs you to ask.
 
     python -m pytest
 
-224 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
+228 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
 so the run takes about 6 seconds.

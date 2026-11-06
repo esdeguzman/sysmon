@@ -75,7 +75,7 @@ the user untick.
 
     python -m pytest
 
-224 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+228 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
