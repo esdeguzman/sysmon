@@ -1,5 +1,48 @@
-data/*.json
-data/*.tmp
+# Runtime data. snapshot.json lists every process running on this machine
+# and advice.json names them with pids, so neither belongs in a repository.
+# The whole directory is ignored rather than listed file types, because the
+# app creates it at startup and a new file type would otherwise be tracked.
+data/
+
+# Python bytecode and caches
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging output, including PyInstaller if this is ever bundled into an exe
+build/
+dist/
+*.egg-info/
+*.spec
+
+# Test and lint caches
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Windows and macOS shell leftovers
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs
+*.log
