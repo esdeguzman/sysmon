@@ -107,8 +107,8 @@ class TestAdviceScrollbar:
     """The scrollbar is always present, never auto-hidden.
 
     Auto-hiding meant re-deciding on every content change against a
-    yview() Tk had not recomputed yet, and it silently failed to come
-    back on a short-to-long transition. A visible empty trough is the
+    yview() Tk had not recomputed yet, and on a short-to-long transition
+    it stayed hidden with no error raised. A visible empty trough is the
     cheaper correctness.
     """
 

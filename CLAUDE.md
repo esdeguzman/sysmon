@@ -25,7 +25,8 @@ with `pid`, `name`, `rss`, `create_time` and `cpu_percent`.
 **Always copy `pid` and `create_time` from `processes`. Never carry them
 forward from a previous `advice.json`.** A stale `create_time` is rejected by
 the PID reuse guard the moment that process has restarted, so the target
-silently does nothing when the user presses Optimize. The first live headless
+is rejected, so pressing Optimize closes nothing and reports the target as
+changed. The first live headless
 run did exactly this, because `processes` did not exist yet and a `claude -p`
 run has Read and Write only.
 
@@ -161,9 +162,10 @@ The single exception is RAM at or above the critical threshold, with a 30
 minute cooldown so a machine stuck at 95 percent cannot loop.
 
 **The timeout needs its own thread.** Checking the clock inside the stdout
-reader only works while the child keeps printing: one that hangs silently
-blocks on `readline` forever, which is the exact case a timeout exists to
-catch. `test_timeout_kills_a_runaway` caught that and guards it.
+reader only works while the child keeps printing. A child that stops
+printing and does not exit leaves the reader blocked on `readline`, so the
+loop never runs again and the clock is never checked. That is the exact
+case a timeout exists to catch. `test_timeout_kills_a_runaway` caught that and guards it.
 
 `shutil.which` resolves to `claude.CMD`, a batch file. Verified that `Popen`
 launches it and captures its output.

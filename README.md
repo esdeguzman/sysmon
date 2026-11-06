@@ -43,7 +43,7 @@ Ask Claude Code "check my laptop" with the monitor running.
 The window flashes its taskbar button, badges its title and shows a banner
 only when RAM is at or above 85 percent and there is at least 1 GB worth
 closing, or when RAM passes 94 percent, or when Claude explicitly marks the
-advice urgent. Everything else is silent on purpose: an alert that fires
+advice urgent. Nothing else raises an alert, on purpose: one that fires
 often is one you stop seeing.
 
 Focusing the window stops the flash. A standing condition re-flashes at most

@@ -1,9 +1,9 @@
 """Samples the process table on a daemon thread into a ring buffer.
 
-The persistent `_procs` cache is load-bearing. psutil reports cpu_percent
-as the change since the previous call on the same Process object, so
-rebuilding those objects each pass would report 0.0 forever and idle
-detection would never fire.
+The persistent `_procs` cache must survive between passes. psutil reports
+cpu_percent as the change since the previous call on the same Process
+object, so rebuilding those objects each pass returns 0.0 every time and
+idle detection never fires.
 """
 
 import json

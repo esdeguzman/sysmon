@@ -41,12 +41,12 @@ class TestReclaimableBytes:
 
 
 class TestShouldAlert:
-    def test_quiet_machine_with_payoff_stays_silent(self):
+    def test_quiet_machine_with_payoff_does_not_fire(self):
         # the user's own case: 71 percent and 1.8 GB reclaimable
         fire, _ = attention.should_alert(advice(), {"ram_percent": 71.0}, 1.8 * GB)
         assert fire is False
 
-    def test_pressure_without_payoff_stays_silent(self):
+    def test_pressure_without_payoff_does_not_fire(self):
         fire, _ = attention.should_alert(advice(), {"ram_percent": 88.0}, 0.3 * GB)
         assert fire is False
 
@@ -87,7 +87,7 @@ class TestShouldAlert:
         )
         assert fire is False
 
-    def test_no_advice_on_a_normal_machine_stays_silent(self):
+    def test_no_advice_on_a_normal_machine_does_not_fire(self):
         fire, _ = attention.should_alert(
             advice(available=False), {"ram_percent": 88.0}, 2 * GB
         )
@@ -107,7 +107,7 @@ class TestAlertState:
         assert state.update(True, "k1", now=2.0) is False
         assert state.update(True, "k1", now=100.0) is False
 
-    def test_silent_while_inactive(self):
+    def test_does_not_fire_while_inactive(self):
         state = attention.AlertState(cooldown=900)
         assert state.update(False, "k1", now=0.0) is False
 

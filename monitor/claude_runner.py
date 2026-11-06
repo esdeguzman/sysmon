@@ -145,9 +145,10 @@ class ClaudeRunner:
         self.lines.put("started")
 
         # The watchdog is a separate thread on purpose. Checking the clock
-        # inside the reader loop only works while the child keeps printing:
-        # one that hangs silently blocks on readline forever, which is
-        # precisely the case the timeout exists to catch.
+        # inside the reader loop only works while the child keeps printing.
+        # A child that stops printing and does not exit leaves the reader
+        # blocked on readline with no further iterations, so the clock is
+        # never checked. That is the case the timeout exists to catch.
         threading.Thread(
             target=self._watchdog,
             args=(proc, time.monotonic() + self.timeout),
