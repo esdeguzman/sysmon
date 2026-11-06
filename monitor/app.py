@@ -107,9 +107,13 @@ class SysmonApp:
         self.canvas.bind_all("<MouseWheel>", self._on_wheel)
 
         tk.Frame(side, bg=LINE, height=1).pack(fill="x", padx=14, pady=(8, 0))
-        tk.Label(side, text="CLAUDE SUGGESTS", bg=PANEL, fg=MUTED, font=self.f_small).pack(
-            anchor="w", padx=14, pady=(8, 2)
+        adv_head = tk.Frame(side, bg=PANEL)
+        adv_head.pack(fill="x", padx=14, pady=(8, 2))
+        tk.Label(adv_head, text="CLAUDE SUGGESTS", bg=PANEL, fg=MUTED, font=self.f_small).pack(
+            side="left"
         )
+        self.lbl_age = tk.Label(adv_head, text="", bg=PANEL, fg=MUTED, font=self.f_small)
+        self.lbl_age.pack(side="right")
         self.lbl_advice = tk.Message(
             side,
             text="No advice yet. Ask Claude to check your laptop.",
@@ -124,6 +128,10 @@ class SysmonApp:
             side, text="", width=320, bg=PANEL, fg=MUTED, font=self.f_small, justify="left"
         )
         self.lbl_notes.pack(anchor="w", padx=14, pady=(4, 0))
+        self.lbl_dead = tk.Message(
+            side, text="", width=320, bg=PANEL, fg=WARN, font=self.f_small, justify="left"
+        )
+        self.lbl_dead.pack(anchor="w", padx=14, pady=(4, 0))
 
         self.btn = tk.Button(
             side,
@@ -242,9 +250,12 @@ class SysmonApp:
             self._render_window(facts)
             self._render_rows(groups, window_seconds)
             self._render_trend(groups, window_seconds)
-            self._render_advice(advice)
+            age = vm.advice_age(advice)
+            self._render_advice(advice, age, vm.dead_targets(advice, snapshot))
             self._update_button(snapshot)
-            self._evaluate_attention(advice, facts.get("totals", {}), groups, snapshot)
+            self._evaluate_attention(
+                advice, facts.get("totals", {}), groups, snapshot, age
+            )
         except Exception as exc:  # a render fault must not stop the clock
             self.lbl_window.configure(text=f"refresh error: {exc}")
         self.root.after(REFRESH_MS, self.refresh)
@@ -353,10 +364,12 @@ class SysmonApp:
 
     # ------------------------------------------------------------- attention
 
-    def _evaluate_attention(self, advice, totals, groups, snapshot):
+    def _evaluate_attention(self, advice, totals, groups, snapshot, age):
         targets = vm.advice_checked_names(advice, snapshot)
         reclaimable = attention.reclaimable_bytes(groups, targets)
-        active, reason = attention.should_alert(advice, totals, reclaimable)
+        active, reason = attention.should_alert(
+            advice, totals, reclaimable, expired=age["expired"]
+        )
 
         if self.alert_state.update(active, attention.alert_key(advice), time.monotonic()):
             # Flashing a window that is already in front is just noise.
@@ -379,7 +392,7 @@ class SysmonApp:
         flash.stop(self.root)
         self.alert_state.acknowledge(time.monotonic())
 
-    def _render_advice(self, advice):
+    def _render_advice(self, advice, age, dead):
         if not advice.get("available"):
             text = (
                 f"advice.json could not be read: {advice['error']}"
@@ -388,11 +401,29 @@ class SysmonApp:
             )
             self.lbl_advice.configure(text=text, fg=MUTED)
             self.lbl_notes.configure(text="")
+            self.lbl_dead.configure(text="")
+            self.lbl_age.configure(text="")
             return
+
+        # Stale advice is greyed rather than hidden. It may still be right,
+        # but it should not read as a statement about the machine right now.
+        self.lbl_age.configure(
+            text=f"{age['label']} · stale" if age["stale"] else age["label"],
+            fg=WARN if age["stale"] else MUTED,
+        )
         self.lbl_advice.configure(
-            text=advice.get("summary") or "Claude wrote advice with no summary.", fg=TEXT
+            text=advice.get("summary") or "Claude wrote advice with no summary.",
+            fg=MUTED if age["stale"] else TEXT,
         )
         self.lbl_notes.configure(text=advice.get("notes") or "")
+
+        notes = []
+        if dead:
+            shown = ", ".join(dead[:3]) + (" and more" if len(dead) > 3 else "")
+            notes.append(f"{shown} no longer running")
+        if age["expired"]:
+            notes.append("Ask Claude for a fresh check.")
+        self.lbl_dead.configure(text="  ".join(notes))
 
     def _update_button(self, snapshot):
         if self.busy:

@@ -49,6 +49,16 @@ often is one you stop seeing.
 Focusing the window stops the flash. A standing condition re-flashes at most
 once every 15 minutes.
 
+## The advice ages
+
+The sidebar shows how old Claude's advice is. Past 30 minutes it is labelled
+stale and greyed. Past 2 hours it stops counting for alerting, so an old file
+cannot flash at you about a machine that has moved on. Targets whose process
+has exited are named.
+
+The monitoring itself needs no Claude session. Sampling, the process list and
+the Optimize button are all local. Only new advice needs you to ask.
+
 ## What it will not do
 
 - Kill anything system-critical. `lsass.exe`, `csrss.exe`, `winlogon.exe` and
@@ -63,5 +73,5 @@ once every 15 minutes.
 
     python -m pytest
 
-130 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
+149 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
 so the run takes about 6 seconds.

@@ -68,7 +68,7 @@ the user untick.
 
     python -m pytest
 
-130 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+149 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -94,6 +94,25 @@ left the sampler permanently behind. The fix took it to 116 ms.
 
 `tests/test_analysis.py::TestBuildFactsScales` guards it. If that test starts
 failing, the loops have been inverted back.
+
+## Advice ages, and the UI says so
+
+`advice.json` is a snapshot of a moment. Shown without its age it reads as
+present tense forever, which is how a three day old file ends up describing
+RAM that has moved on and naming processes that exited yesterday.
+
+| Age | Behaviour |
+|---|---|
+| Under 30 min | Normal. Header shows "4 min ago" |
+| 30 min to 2 hours | Header shows "stale", summary greyed |
+| Over 2 hours | Also expired: cannot raise an alert at all |
+
+`vm.dead_targets` lists targets whose process is gone, including the case
+where the PID was recycled by something else, and the sidebar names them.
+
+Expired advice still displays, because it may still be right. It just stops
+being allowed to spend the user's attention. Critical RAM is exempt from the
+expiry gate: that is measured now, not claimed by a file.
 
 ## Getting the user's attention
 

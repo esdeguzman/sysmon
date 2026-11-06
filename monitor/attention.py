@@ -29,10 +29,16 @@ def reclaimable_bytes(groups, target_names):
     return total
 
 
-def should_alert(advice, totals, reclaimable):
-    """Return (fire, reason) for the current conditions."""
+def should_alert(advice, totals, reclaimable, expired=False):
+    """Return (fire, reason) for the current conditions.
+
+    `expired` advice cannot raise an alert. Its numbers describe a machine
+    that has moved on and its targets may have exited hours ago, so acting
+    on it would spend the user's attention on a stale claim. Critical RAM
+    is exempt: that is measured now, not claimed by a file.
+    """
     ram = totals.get("ram_percent") or 0.0
-    has_advice = bool(advice and advice.get("available"))
+    has_advice = bool(advice and advice.get("available")) and not expired
 
     if has_advice and str(advice.get("urgency") or "").lower() == "high":
         return True, f"Claude flagged this as urgent. {format_bytes(reclaimable)} reclaimable"

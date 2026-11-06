@@ -193,3 +193,73 @@ class TestRowDetailIdle:
         rows = vm.row_models([group("a.exe", MB, idle=4.0)], set(), window_seconds=42.0)
         assert "quiet" not in rows[0]["detail"]
         assert "idle" not in rows[0]["detail"]
+
+
+class TestAdviceAge:
+    WRITTEN = "2026-11-06T10:00:00"
+
+    def test_fresh_advice_reports_minutes(self):
+        age = vm.advice_age({"written_at": self.WRITTEN}, now="2026-11-06T10:04:00")
+        assert age["label"] == "4 min ago"
+        assert age["stale"] is False
+        assert age["expired"] is False
+
+    def test_just_written_reads_as_just_now(self):
+        age = vm.advice_age({"written_at": self.WRITTEN}, now="2026-11-06T10:00:20")
+        assert age["label"] == "just now"
+
+    def test_hours_are_reported_in_hours(self):
+        age = vm.advice_age({"written_at": self.WRITTEN}, now="2026-11-06T13:00:00")
+        assert age["label"] == "3 hours ago"
+
+    def test_days_are_reported_in_days(self):
+        age = vm.advice_age({"written_at": self.WRITTEN}, now="2026-11-09T10:00:00")
+        assert age["label"] == "3 days ago"
+
+    def test_past_thirty_minutes_is_stale(self):
+        age = vm.advice_age({"written_at": self.WRITTEN}, now="2026-11-06T10:31:00")
+        assert age["stale"] is True
+        assert age["expired"] is False
+
+    def test_past_two_hours_is_expired(self):
+        age = vm.advice_age({"written_at": self.WRITTEN}, now="2026-11-06T12:01:00")
+        assert age["expired"] is True
+        assert age["stale"] is True
+
+    def test_unparseable_timestamp_is_treated_as_expired(self):
+        age = vm.advice_age({"written_at": "not a date"}, now="2026-11-06T10:00:00")
+        assert age["expired"] is True
+        assert age["label"] == "age unknown"
+
+    def test_missing_timestamp_is_treated_as_expired(self):
+        age = vm.advice_age({}, now="2026-11-06T10:00:00")
+        assert age["expired"] is True
+
+    def test_a_clock_skewed_future_timestamp_is_not_stale(self):
+        age = vm.advice_age({"written_at": "2026-11-06T11:00:00"}, now=self.WRITTEN)
+        assert age["stale"] is False
+        assert age["label"] == "just now"
+
+
+class TestDeadTargets:
+    def test_names_targets_whose_process_is_gone(self):
+        advice = {"targets": [{"pid": 1, "name": "gone.exe"}, {"pid": 2, "name": "here.exe"}]}
+        snapshot = [{"pid": 2, "name": "here.exe", "create_time": 1.0}]
+        assert vm.dead_targets(advice, snapshot) == ["gone.exe"]
+
+    def test_a_reused_pid_counts_as_gone(self):
+        # same pid, different process: the advice is about one that exited
+        advice = {"targets": [{"pid": 2, "name": "old.exe"}]}
+        snapshot = [{"pid": 2, "name": "different.exe", "create_time": 1.0}]
+        assert vm.dead_targets(advice, snapshot) == ["old.exe"]
+
+    def test_all_alive_yields_nothing(self):
+        advice = {"targets": [{"pid": 2, "name": "here.exe"}]}
+        snapshot = [{"pid": 2, "name": "here.exe", "create_time": 1.0}]
+        assert vm.dead_targets(advice, snapshot) == []
+
+    def test_no_targets_yields_nothing(self):
+        assert vm.dead_targets({"targets": []}, []) == []
+
+    def test_none_advice_yields_nothing(self):
+        assert vm.dead_targets(None, []) == []

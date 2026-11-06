@@ -164,3 +164,37 @@ class TestTitleFor:
 
     def test_alert_with_no_payoff_says_pressure(self):
         assert attention.title_for(True, 0) == "sysmon - memory pressure"
+
+
+class TestExpiredAdviceCannotAlert:
+    """A day-old file describes a machine that has moved on."""
+
+    def test_expired_advice_does_not_fire_the_normal_threshold(self):
+        fire, _ = attention.should_alert(
+            advice(), {"ram_percent": 90.0}, 2 * GB, expired=True
+        )
+        assert fire is False
+
+    def test_expired_advice_does_not_fire_even_marked_urgent(self):
+        fire, _ = attention.should_alert(
+            advice(urgency="high"), {"ram_percent": 40.0}, 2 * GB, expired=True
+        )
+        assert fire is False
+
+    def test_expired_advice_still_allows_the_critical_ram_alert(self):
+        # the machine being full is a live fact, not an advice claim
+        fire, reason = attention.should_alert(
+            advice(), {"ram_percent": 96.0}, 0, expired=True
+        )
+        assert fire is True
+        assert "critical" in reason.lower()
+
+    def test_fresh_advice_is_unaffected(self):
+        fire, _ = attention.should_alert(
+            advice(), {"ram_percent": 90.0}, 2 * GB, expired=False
+        )
+        assert fire is True
+
+    def test_expired_defaults_to_false_for_existing_callers(self):
+        fire, _ = attention.should_alert(advice(), {"ram_percent": 90.0}, 2 * GB)
+        assert fire is True

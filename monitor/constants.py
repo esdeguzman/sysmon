@@ -59,3 +59,8 @@ BLOCKED_NAMES = frozenset(
 )
 
 BLOCKED_PIDS = frozenset({0, 4})
+
+# Advice ageing. Past STALE it is labelled and greyed; past EXPIRED it stops
+# counting as advice at all, so a day-old file cannot raise an alert.
+ADVICE_STALE_SECONDS = 1800  # 30 minutes
+ADVICE_EXPIRED_SECONDS = 7200  # 2 hours

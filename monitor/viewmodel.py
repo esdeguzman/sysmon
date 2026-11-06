@@ -4,6 +4,10 @@ Everything here is pure, so the sidebar's behaviour can be tested without
 opening a window. app.py does nothing but wire these results to widgets.
 """
 
+from datetime import datetime
+
+from monitor.constants import ADVICE_EXPIRED_SECONDS, ADVICE_STALE_SECONDS
+
 _BYTES_PER_MB = 1048576
 IDLE_REPORT_SECONDS = 300
 
@@ -159,3 +163,71 @@ def summarize_results(results, rejected):
         "lines": lines,
         "forceable": forceable,
     }
+
+
+def _parse_written_at(value):
+    try:
+        return datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def advice_age(advice, now=None):
+    """How old the advice is, and whether it still counts.
+
+    Advice is a snapshot of a moment. Shown without its age it reads as
+    present tense forever, which is how a three day old file ends up
+    describing RAM that has moved on and naming processes that have exited.
+    Past the expiry it stops counting as advice at all, so a stale file
+    cannot raise an alert.
+    """
+    written = _parse_written_at((advice or {}).get("written_at"))
+    if written is None:
+        return {"label": "age unknown", "seconds": None, "stale": True, "expired": True}
+
+    reference = _parse_written_at(now) or datetime.now()
+    seconds = (reference - written).total_seconds()
+
+    # A future timestamp means a clock skew, not advice from the future.
+    if seconds < 0:
+        seconds = 0.0
+
+    if seconds < 60:
+        label = "just now"
+    elif seconds < 3600:
+        label = f"{int(seconds // 60)} min ago"
+    elif seconds < 86400:
+        hours = int(seconds // 3600)
+        label = f"{hours} hour{'s' if hours != 1 else ''} ago"
+    else:
+        days = int(seconds // 86400)
+        label = f"{days} day{'s' if days != 1 else ''} ago"
+
+    return {
+        "label": label,
+        "seconds": seconds,
+        "stale": seconds >= ADVICE_STALE_SECONDS,
+        "expired": seconds >= ADVICE_EXPIRED_SECONDS,
+    }
+
+
+def dead_targets(advice, snapshot):
+    """Names of advice targets whose process is no longer the one meant.
+
+    A recycled PID counts as gone: the advice was written about a process
+    that has since exited, whatever now holds that number.
+    """
+    if not advice:
+        return []
+    by_pid = {proc.get("pid"): proc for proc in snapshot}
+    gone = []
+    for target in advice.get("targets") or []:
+        match = by_pid.get(target.get("pid"))
+        name = target.get("name") or f"pid {target.get('pid')}"
+        if match is None:
+            gone.append(name)
+        elif target.get("name") and (match.get("name") or "").lower() != str(
+            target["name"]
+        ).lower():
+            gone.append(name)
+    return gone
