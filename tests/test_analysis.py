@@ -135,3 +135,52 @@ class TestBuildFacts:
         s2 = [{"pid": 2, "name": "here.exe", "rss": 100, "cpu_percent": 0.0}]
         facts = analysis.build_facts([s1, s2], {}, 2.0)
         assert [g["name"] for g in facts["groups"]] == ["here.exe"]
+
+
+class TestBuildFactsScales:
+    """build_facts was O(groups x samples x processes): 5.5s at full buffer.
+
+    The window refreshes every 2s on the Tk main thread, so that froze the
+    UI once the 15 minute buffer filled. These guard the complexity, not a
+    wall-clock target, so the bound is deliberately loose.
+    """
+
+    def _buffer(self, depth, procs, groups):
+        sample = [
+            {
+                "pid": i,
+                "name": f"app{i % groups}.exe",
+                "rss": 1000 + i,
+                "cpu_percent": 0.0,
+            }
+            for i in range(procs)
+        ]
+        return [sample] * depth
+
+    def test_full_buffer_is_fast(self):
+        import time
+
+        buf = self._buffer(depth=450, procs=345, groups=103)
+        start = time.perf_counter()
+        facts = analysis.build_facts(buf, {}, 2.0)
+        elapsed = time.perf_counter() - start
+        assert len(facts["groups"]) == 103
+        assert elapsed < 1.0, f"build_facts took {elapsed:.2f}s at full buffer depth"
+
+    def test_history_still_sums_across_a_groups_processes(self):
+        # the fast path must not lose the per-group aggregation
+        s1 = [
+            {"pid": 1, "name": "a.exe", "rss": 100, "cpu_percent": 1.0},
+            {"pid": 2, "name": "a.exe", "rss": 200, "cpu_percent": 2.0},
+        ]
+        facts = analysis.build_facts([s1, s1], {}, 2.0)
+        assert facts["groups"][0]["rss"] == 300
+
+    def test_a_group_absent_from_an_old_sample_reads_zero(self):
+        s1 = [{"pid": 1, "name": "old.exe", "rss": 100, "cpu_percent": 0.0}]
+        s2 = [{"pid": 2, "name": "new.exe", "rss": 500, "cpu_percent": 0.0}]
+        facts = analysis.build_facts([s1, s2], {}, 2.0)
+        group = facts["groups"][0]
+        assert group["name"] == "new.exe"
+        # rss went 0 -> 500 across the window, so the trend must be positive
+        assert group["rss_trend"] > 0

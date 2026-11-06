@@ -101,18 +101,29 @@ def build_facts(buffer, totals, interval):
     latest = buffer[-1]
     groups = group_processes(latest)
 
-    # Per-group history: sum RSS and CPU across that group's processes in
-    # every past sample, so the trend follows the app rather than one PID.
+    # Each sample is aggregated by name ONCE, then every group indexes into
+    # the result. Scanning the buffer per group instead is
+    # O(groups x samples x processes): 5.5 seconds at a full 15 minute
+    # buffer on 345 processes, which froze the 2 second UI refresh.
+    per_sample = []
+    for sample in buffer:
+        totals_by_name = {}
+        for proc in sample:
+            key = proc.get("name", "").lower()
+            entry = totals_by_name.get(key)
+            if entry is None:
+                totals_by_name[key] = [proc.get("rss", 0), proc.get("cpu_percent", 0.0)]
+            else:
+                entry[0] += proc.get("rss", 0)
+                entry[1] += proc.get("cpu_percent", 0.0)
+        per_sample.append(totals_by_name)
+
+    absent = (0, 0.0)
     for group in groups:
         name = group["name"]
         history = []
-        for sample in buffer:
-            rss = 0
-            cpu = 0.0
-            for proc in sample:
-                if proc.get("name", "").lower() == name:
-                    rss += proc.get("rss", 0)
-                    cpu += proc.get("cpu_percent", 0.0)
+        for totals_by_name in per_sample:
+            rss, cpu = totals_by_name.get(name, absent)
             history.append({"rss": rss, "cpu_percent": cpu})
         group["idle_seconds"] = idle_seconds(history, interval)
         group["rss_trend"] = round(rss_trend_mb_per_min(history, interval), 2)

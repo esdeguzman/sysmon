@@ -63,5 +63,5 @@ once every 15 minutes.
 
     python -m pytest
 
-127 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
+130 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
 so the run takes about 6 seconds.

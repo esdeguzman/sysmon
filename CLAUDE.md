@@ -68,7 +68,7 @@ the user untick.
 
     python -m pytest
 
-127 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+130 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -82,6 +82,18 @@ way, because widgets are the part that cannot be tested headless.
 no CPU for the whole window but the window is still shorter than the five
 minute idle threshold. Calling that `active` stated the opposite of what was
 measured, which is the bug it exists to prevent.
+
+## build_facts must stay linear
+
+`analysis.build_facts` aggregates each sample by name once, then lets every
+group index into that result. The obvious implementation, scanning the whole
+buffer per group, is O(groups x samples x processes): measured at **5.5
+seconds** on a full 15 minute buffer with 345 processes and 103 groups. The UI
+refreshes every 2 seconds on the Tk main thread, so that froze the window and
+left the sampler permanently behind. The fix took it to 116 ms.
+
+`tests/test_analysis.py::TestBuildFactsScales` guards it. If that test starts
+failing, the loops have been inverted back.
 
 ## Getting the user's attention
 
