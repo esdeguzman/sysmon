@@ -5,12 +5,13 @@ advice file. No API call is involved.
 
 ## The loop
 
-1. The user runs `run.cmd`. A sampler thread writes `data/snapshot.json`
-   every 2 seconds and the dashboard opens at http://127.0.0.1:7777.
+1. The user runs `run.cmd`, which opens the native Tkinter window
+   (`monitor/app.py`). A sampler thread inside it writes
+   `data/snapshot.json` every 2 seconds.
 2. The user asks Claude to check the laptop.
 3. Claude reads `data/snapshot.json`.
 4. Claude writes `data/advice.json`.
-5. The sidebar picks it up within one 2 second poll.
+5. The sidebar picks it up on the next 2 second refresh.
 
 ## Reading the snapshot
 
@@ -18,7 +19,7 @@ advice file. No API call is involved.
 executable with summed RSS across its processes, plus `idle_seconds`,
 `rss_trend` in MB per minute, `growing`, and the member `pids`.
 
-Per-process rows with `create_time` are at `GET /api/snapshot`, or run:
+Per-process rows with `create_time` are not in that file. Get them with:
 
     python -c "from monitor.sampler import Sampler; import json; print(json.dumps(Sampler().sample()[:5], indent=2))"
 
@@ -62,5 +63,23 @@ the user untick.
 
     python -m pytest
 
-63 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+96 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
+
+## Where the UI logic lives
+
+`monitor/viewmodel.py` is pure and holds everything the sidebar decides:
+formatting, which rows are ticked, how advice maps to groups, and
+`process_state`. `monitor/app.py` is Tk wiring over it and should stay that
+way, because widgets are the part that cannot be tested headless.
+
+`process_state` returns `quiet` rather than `active` when a process has used
+no CPU for the whole window but the window is still shorter than the five
+minute idle threshold. Calling that `active` stated the opposite of what was
+measured, which is the bug it exists to prevent.
+
+## The web UI is still there
+
+`run-web.cmd` serves the same data at http://127.0.0.1:7777. Useful for
+driving `/api/state` and `/api/kill` with `curl`. The native window is the
+default because a WebView2 shell measured 436 MB against Tkinter's 37.
