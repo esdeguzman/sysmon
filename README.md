@@ -27,9 +27,8 @@ options were measured rather than assumed:
 WebView2 loses because standalone it starts its own Chromium stack rather
 than sharing the browser already running.
 
-The web UI still works and its tests still run. `run-web.cmd` serves it on
-http://127.0.0.1:7777 for debugging, where `curl` against `/api/state` and
-`/api/kill` is useful.
+The web UI has since been removed entirely, so the window is the only way to
+run it.
 
 ## How the Claude part works
 
@@ -98,11 +97,11 @@ the Optimize button are all local. Only new advice needs you to ask.
 - Force-kill anything on the first press. Optimize sends a close request and
   reports what refused, so an app with unsaved work gets to ask you first.
   Force is a second, per-process click.
-- Reach the network. The optional web server binds `127.0.0.1` only.
+- Open a network port. There is no server, just the window.
 
 ## Tests
 
     python -m pytest
 
-228 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
+218 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
 so the run takes about 6 seconds.

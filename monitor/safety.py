@@ -1,8 +1,8 @@
 """Kill authorization. Pure, and the unit that matters most.
 
-The browser is a view with no authority. Every kill request is revalidated
-here against the live snapshot, so a stale page, a crafted POST and a
-hand-edited advice.json all hit the same four checks.
+The sidebar is a view with no authority. Every kill request is revalidated
+here against the live snapshot, so a stale window and a hand-edited
+advice.json both hit the same four checks.
 """
 
 from monitor.constants import BLOCKED_NAMES, BLOCKED_PIDS

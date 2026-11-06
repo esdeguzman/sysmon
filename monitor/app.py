@@ -44,7 +44,7 @@ GOOD = "#4ec98a"
 
 
 def annotate_killable(groups):
-    """Mark each group killable, matching what the server does for the page."""
+    """Mark each group killable, so the sidebar can disable blocked rows."""
     for group in groups:
         blocked = group["name"] in BLOCKED_NAMES
         pid_blocked = any(pid in BLOCKED_PIDS for pid in group.get("pids", []))

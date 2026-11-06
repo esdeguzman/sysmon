@@ -55,7 +55,7 @@ user's attention directly. Leave it out and the app decides on its own.
 ## Rules
 
 - Never target a process in `BLOCKED_NAMES` (`monitor/constants.py`). The
-  server rejects them, but suggesting one wastes the user's time.
+  app rejects them, but suggesting one wastes the user's time.
 - Never target the user's editor or terminal without saying so in `notes`.
 - `idle_seconds` equal to the full window means idle for at least that long,
   not exactly that long.
@@ -67,7 +67,7 @@ user's attention directly. Leave it out and the app decides on its own.
 ## The checkbox model is per group, not per PID
 
 The sidebar ticks whole executables. Naming one Chrome renderer in `targets`
-selects every Chrome process, because the frontend maps the target's PID back
+selects every Chrome process, because the sidebar maps the target's PID back
 to its group name. When that is not what you want, say so in `notes` and let
 the user untick.
 
@@ -75,7 +75,7 @@ the user untick.
 
     python -m pytest
 
-228 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+218 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -261,8 +261,9 @@ flashes again.
 calling `FlashWindowEx`. Tk's `winfo_id()` returns an inner child window, and
 flashing that one succeeds, reports no error and blinks nothing.
 
-## The web UI is still there
+## The web UI was removed
 
-`run-web.cmd` serves the same data at http://127.0.0.1:7777. Useful for
-driving `/api/state` and `/api/kill` with `curl`. The native window is the
-default because a WebView2 shell measured 436 MB against Tkinter's 37.
+The app is the Tkinter window only. `run-web.cmd`, `monitor/server.py` and
+`web/` are gone, because a tool whose job is reclaiming RAM should not spend
+it on a server and a browser tab. A WebView2 shell measured 436 MB against
+Tkinter's 37.
