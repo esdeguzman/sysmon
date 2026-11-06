@@ -49,6 +49,22 @@ often is one you stop seeing.
 Focusing the window stops the flash. A standing condition re-flashes at most
 once every 15 minutes.
 
+## It works without Claude
+
+When there is no advice file, or it is over 2 hours old, the app falls back to
+built-in rules and the sidebar says BUILT-IN RULES rather than CLAUDE SUGGESTS.
+They flag apps that have used no CPU for the whole window, and apps whose
+memory is climbing.
+
+They are deliberately timid about what they pre-tick. Editors, terminals, VPN
+and network processes, developer processes, and anything with 20 or more
+processes get reported with a reason but never selected for you, because a
+rule cannot tell an idle app from one you are coming back to. You can still
+tick them yourself.
+
+Rules alert at a higher bar than Claude does: 90 percent RAM and 2 GB, against
+85 and 1.
+
 ## The advice ages
 
 The sidebar shows how old Claude's advice is. Past 30 minutes it is labelled
@@ -73,5 +89,5 @@ the Optimize button are all local. Only new advice needs you to ask.
 
     python -m pytest
 
-149 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
+183 tests. `tests/test_killer.py` spawns and kills real throwaway processes,
 so the run takes about 6 seconds.

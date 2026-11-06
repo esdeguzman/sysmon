@@ -198,3 +198,45 @@ class TestExpiredAdviceCannotAlert:
     def test_expired_defaults_to_false_for_existing_callers(self):
         fire, _ = attention.should_alert(advice(), {"ram_percent": 90.0}, 2 * GB)
         assert fire is True
+
+
+class TestLocalSourceUsesAHigherBar:
+    """A rule is less trustworthy than a judgement, so it clears more."""
+
+    def test_local_does_not_fire_at_claudes_threshold(self):
+        # 88 percent and 1.5 GB fires for Claude, not for a rule
+        fire, _ = attention.should_alert(
+            advice(), {"ram_percent": 88.0}, int(1.5 * GB), local=True
+        )
+        assert fire is False
+
+    def test_local_fires_at_its_own_threshold(self):
+        fire, reason = attention.should_alert(
+            advice(), {"ram_percent": 91.0}, int(2.5 * GB), local=True
+        )
+        assert fire is True
+        assert "built-in" in reason.lower()
+
+    def test_local_needs_both_pressure_and_payoff(self):
+        fire, _ = attention.should_alert(
+            advice(), {"ram_percent": 91.0}, int(1.0 * GB), local=True
+        )
+        assert fire is False
+
+    def test_critical_ram_still_fires_for_local(self):
+        fire, reason = attention.should_alert(
+            advice(), {"ram_percent": 95.0}, 0, local=True
+        )
+        assert fire is True
+        assert "critical" in reason.lower()
+
+    def test_local_cannot_force_an_alert_with_urgency(self):
+        # build_local_advice never sets urgency, but defend it here too
+        fire, _ = attention.should_alert(
+            advice(urgency="high"), {"ram_percent": 40.0}, 0, local=True
+        )
+        assert fire is False
+
+    def test_claude_path_is_unaffected(self):
+        fire, _ = attention.should_alert(advice(), {"ram_percent": 88.0}, int(1.5 * GB))
+        assert fire is True

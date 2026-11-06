@@ -68,7 +68,7 @@ the user untick.
 
     python -m pytest
 
-149 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+183 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -94,6 +94,39 @@ left the sampler permanently behind. The fix took it to 116 ms.
 
 `tests/test_analysis.py::TestBuildFactsScales` guards it. If that test starts
 failing, the loops have been inverted back.
+
+## It analyses itself when Claude is absent
+
+`monitor/local_analysis.py` runs when `advice.json` is missing or expired, so
+the app keeps working with no session attached. The sidebar header switches
+from CLAUDE SUGGESTS to BUILT-IN RULES. Provenance is never blurred: the user
+must always know whether they are reading judgement or a rule.
+
+Rules find candidates freely and suggest conservatively. A group is a
+candidate if it is killable, over 200 MB, and either idle for the whole
+window or flagged growing. Nothing is judged until the window reaches 5
+minutes, because before that everything looks idle.
+
+**Two classes are found but never pre-ticked**, since a rule cannot tell idle
+from finished-with:
+
+| Class | Why |
+|---|---|
+| `CAUTION_NAMES` | editors and terminals (unsaved work), VPN and network (drops connectivity), developer processes (could be a running server or suite), `msedgewebview2.exe` (hosts another app's window) |
+| 20 or more processes | a big tree is usually an open working set, like 47 Chrome renderers |
+
+Both stay tickable by hand, and Claude can still target them with its own
+reasoning. The restriction is on what a *rule* may decide unprompted.
+
+Local findings alert at a higher bar than Claude's: 90 percent and 2 GB
+against 85 and 1. `build_local_advice` never sets `urgency`, and
+`should_alert` ignores it when `local=True`, because that field bypasses
+every threshold and is authority a rule has not earned.
+
+**The lists were calibrated against a real machine, not guessed.** The first
+run pre-ticked the Windows Start Menu, a VPN, a test runner and a JVM. Those
+are now blocked or cautioned, with a test each in
+`TestRealWorldFalsePositives`.
 
 ## Advice ages, and the UI says so
 

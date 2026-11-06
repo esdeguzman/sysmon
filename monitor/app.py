@@ -12,10 +12,12 @@ background work posts its result back through `root.after`.
 import threading
 import time
 import tkinter as tk
+
+import psutil
 from tkinter import font as tkfont
 from tkinter import ttk
 
-from monitor import attention, flash, killer, safety, viewmodel as vm
+from monitor import attention, flash, killer, local_analysis, safety, viewmodel as vm
 from monitor.advice import read_advice
 from monitor.constants import ADVICE_PATH, BLOCKED_NAMES, BLOCKED_PIDS
 from monitor.sampler import Sampler
@@ -109,9 +111,10 @@ class SysmonApp:
         tk.Frame(side, bg=LINE, height=1).pack(fill="x", padx=14, pady=(8, 0))
         adv_head = tk.Frame(side, bg=PANEL)
         adv_head.pack(fill="x", padx=14, pady=(8, 2))
-        tk.Label(adv_head, text="CLAUDE SUGGESTS", bg=PANEL, fg=MUTED, font=self.f_small).pack(
-            side="left"
+        self.lbl_source = tk.Label(
+            adv_head, text="CLAUDE SUGGESTS", bg=PANEL, fg=MUTED, font=self.f_small
         )
+        self.lbl_source.pack(side="left")
         self.lbl_age = tk.Label(adv_head, text="", bg=PANEL, fg=MUTED, font=self.f_small)
         self.lbl_age.pack(side="right")
         self.lbl_advice = tk.Message(
@@ -242,20 +245,32 @@ class SysmonApp:
             groups = annotate_killable(facts.get("groups", []))
             advice = read_advice(ADVICE_PATH)
 
-            if not self.touched:
-                self.checked = vm.advice_checked_names(advice, snapshot)
-
             window_seconds = facts.get("window_seconds") or 0.0
-            self._render_meters(facts.get("totals", {}))
+            totals = facts.get("totals", {})
+            age = vm.advice_age(advice)
+
+            # Claude's advice wins while it is fresh. Built-in rules take
+            # over when it is absent or expired, so the app keeps doing its
+            # job with no session attached.
+            local = None
+            if not advice.get("available") or age["expired"]:
+                local = local_analysis.build_local_advice(
+                    groups, window_seconds, totals, self._uptime_days()
+                )
+
+            if not self.touched:
+                if local is not None:
+                    self.checked = set(local["suggested_names"])
+                else:
+                    self.checked = vm.advice_checked_names(advice, snapshot)
+
+            self._render_meters(totals)
             self._render_window(facts)
             self._render_rows(groups, window_seconds)
             self._render_trend(groups, window_seconds)
-            age = vm.advice_age(advice)
-            self._render_advice(advice, age, vm.dead_targets(advice, snapshot))
+            self._render_advice(advice, age, vm.dead_targets(advice, snapshot), local)
             self._update_button(snapshot)
-            self._evaluate_attention(
-                advice, facts.get("totals", {}), groups, snapshot, age
-            )
+            self._evaluate_attention(advice, totals, groups, snapshot, age, local)
         except Exception as exc:  # a render fault must not stop the clock
             self.lbl_window.configure(text=f"refresh error: {exc}")
         self.root.after(REFRESH_MS, self.refresh)
@@ -364,12 +379,24 @@ class SysmonApp:
 
     # ------------------------------------------------------------- attention
 
-    def _evaluate_attention(self, advice, totals, groups, snapshot, age):
-        targets = vm.advice_checked_names(advice, snapshot)
-        reclaimable = attention.reclaimable_bytes(groups, targets)
-        active, reason = attention.should_alert(
-            advice, totals, reclaimable, expired=age["expired"]
-        )
+    def _uptime_days(self):
+        try:
+            return (time.time() - psutil.boot_time()) / 86400
+        except Exception:
+            return 0.0
+
+    def _evaluate_attention(self, advice, totals, groups, snapshot, age, local):
+        if local is not None:
+            reclaimable = local["reclaimable"]
+            active, reason = attention.should_alert(
+                local, totals, reclaimable, local=True
+            )
+        else:
+            targets = vm.advice_checked_names(advice, snapshot)
+            reclaimable = attention.reclaimable_bytes(groups, targets)
+            active, reason = attention.should_alert(
+                advice, totals, reclaimable, expired=age["expired"]
+            )
 
         if self.alert_state.update(active, attention.alert_key(advice), time.monotonic()):
             # Flashing a window that is already in front is just noise.
@@ -392,7 +419,18 @@ class SysmonApp:
         flash.stop(self.root)
         self.alert_state.acknowledge(time.monotonic())
 
-    def _render_advice(self, advice, age, dead):
+    def _render_advice(self, advice, age, dead, local):
+        if local is not None:
+            # Provenance matters more than tidiness here. The user must
+            # always know whether they are reading judgement or a rule.
+            self.lbl_source.configure(text="BUILT-IN RULES", fg=WARN)
+            self.lbl_age.configure(text="no Claude session", fg=MUTED)
+            self.lbl_advice.configure(text=local["summary"], fg=TEXT)
+            self.lbl_notes.configure(text=local["notes"])
+            self.lbl_dead.configure(text="")
+            return
+
+        self.lbl_source.configure(text="CLAUDE SUGGESTS", fg=MUTED)
         if not advice.get("available"):
             text = (
                 f"advice.json could not be read: {advice['error']}"

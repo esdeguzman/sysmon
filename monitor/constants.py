@@ -50,6 +50,18 @@ BLOCKED_NAMES = frozenset(
         "audiodg.exe",
         "sihost.exe",
         "explorer.exe",
+        # Windows shell components. They respawn within seconds, so killing
+        # them reclaims nothing and just flickers the desktop. Offering them
+        # as targets wastes a click and looks like the tool is working.
+        "startmenuexperiencehost.exe",
+        "searchhost.exe",
+        "shellexperiencehost.exe",
+        "textinputhost.exe",
+        "runtimebroker.exe",
+        "applicationframehost.exe",
+        "ctfmon.exe",
+        "taskhostw.exe",
+        "dllhost.exe",
         # Not a Windows process, but killing it ends the Claude Code session
         # that writes the advice file. The ancestor check already covers this
         # when the monitor is started from that session, and does not when
@@ -64,3 +76,76 @@ BLOCKED_PIDS = frozenset({0, 4})
 # counting as advice at all, so a day-old file cannot raise an alert.
 ADVICE_STALE_SECONDS = 1800  # 30 minutes
 ADVICE_EXPIRED_SECONDS = 7200  # 2 hours
+
+# Built-in analysis, used when Claude's advice is absent or expired. A rule
+# is less trustworthy than a judgement, so it has to clear more before it
+# spends the user's attention.
+LOCAL_ALERT_RAM_PERCENT = 90.0
+LOCAL_ALERT_RECLAIM_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+LOCAL_MIN_CANDIDATE_BYTES = 200 * 1024 * 1024  # below this, closing it is noise
+LOCAL_MANY_PROCESSES = 20  # a big process tree is usually an open working set
+UPTIME_NAG_DAYS = 7
+
+# Killable, but never pre-ticked by a rule: unsaved work lives here, and a
+# rule cannot tell "idle" from "finished with". The user can still tick
+# them by hand, and Claude can still target them with its own reasoning.
+CAUTION_NAMES = frozenset(
+    {
+        "code.exe",
+        "code - insiders.exe",
+        "trae.exe",
+        "devenv.exe",
+        "idea64.exe",
+        "pycharm64.exe",
+        "webstorm64.exe",
+        "rider64.exe",
+        "studio64.exe",
+        "sublime_text.exe",
+        "notepad++.exe",
+        "notepad.exe",
+        "wordpad.exe",
+        "winword.exe",
+        "excel.exe",
+        "powerpnt.exe",
+        "warp.exe",
+        "windowsterminal.exe",
+        "wt.exe",
+        "powershell.exe",
+        "pwsh.exe",
+        "cmd.exe",
+        "conhost.exe",
+        "bash.exe",
+        "git-bash.exe",
+        "wsl.exe",
+        "obs64.exe",
+        "ms-teams.exe",
+        "teams.exe",
+        "zoom.exe",
+        # Network and VPN. Closing one of these drops connectivity, which
+        # is a bad surprise at any time and a worse one mid-call.
+        "cloudflare warp.exe",
+        "warp-svc.exe",
+        "openvpn.exe",
+        "wireguard.exe",
+        "nordvpn.exe",
+        "expressvpn.exe",
+        "tailscale-ipn.exe",
+        # Developer processes. A rule cannot tell a finished run from a
+        # dev server, a running test suite or a local backend.
+        "node.exe",
+        "cypress.exe",
+        "java.exe",
+        "javaw.exe",
+        "python.exe",
+        "pythonw.exe",
+        "dotnet.exe",
+        "docker desktop.exe",
+        "com.docker.backend.exe",
+        "gradle.exe",
+        "mysqld.exe",
+        "postgres.exe",
+        # Hosts another application's UI, so killing it breaks that app
+        # rather than the one named here.
+        "msedgewebview2.exe",
+    }
+)

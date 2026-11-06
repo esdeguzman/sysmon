@@ -12,6 +12,8 @@ from monitor.constants import (
     ALERT_RAM_PERCENT,
     ALERT_RECLAIM_BYTES,
     CRITICAL_RAM_PERCENT,
+    LOCAL_ALERT_RAM_PERCENT,
+    LOCAL_ALERT_RECLAIM_BYTES,
 )
 from monitor.viewmodel import format_bytes
 
@@ -29,22 +31,35 @@ def reclaimable_bytes(groups, target_names):
     return total
 
 
-def should_alert(advice, totals, reclaimable, expired=False):
+def should_alert(advice, totals, reclaimable, expired=False, local=False):
     """Return (fire, reason) for the current conditions.
 
     `expired` advice cannot raise an alert. Its numbers describe a machine
     that has moved on and its targets may have exited hours ago, so acting
-    on it would spend the user's attention on a stale claim. Critical RAM
-    is exempt: that is measured now, not claimed by a file.
+    on it would spend the user's attention on a stale claim.
+
+    `local` findings come from rules rather than judgement, so they clear a
+    higher bar and can never use the urgency override.
+
+    Critical RAM is exempt from both: that is measured now, not claimed.
     """
     ram = totals.get("ram_percent") or 0.0
     has_advice = bool(advice and advice.get("available")) and not expired
 
-    if has_advice and str(advice.get("urgency") or "").lower() == "high":
+    if has_advice and not local and str(advice.get("urgency") or "").lower() == "high":
         return True, f"Claude flagged this as urgent. {format_bytes(reclaimable)} reclaimable"
 
     if ram >= CRITICAL_RAM_PERCENT:
         return True, f"RAM {ram:.0f} percent, critical"
+
+    if local:
+        if ram >= LOCAL_ALERT_RAM_PERCENT and reclaimable >= LOCAL_ALERT_RECLAIM_BYTES:
+            return (
+                True,
+                f"RAM {ram:.0f} percent. Built-in rules see "
+                f"{format_bytes(reclaimable)} reclaimable",
+            )
+        return False, ""
 
     if has_advice and ram >= ALERT_RAM_PERCENT and reclaimable >= ALERT_RECLAIM_BYTES:
         return True, f"RAM {ram:.0f} percent. {format_bytes(reclaimable)} reclaimable"
