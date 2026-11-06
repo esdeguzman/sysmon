@@ -14,7 +14,7 @@ from collections import deque
 
 import psutil
 
-from monitor import analysis
+from monitor import analysis, winproc
 from monitor.constants import (
     BUFFER_DEPTH,
     DATA_DIR,
@@ -23,7 +23,11 @@ from monitor.constants import (
     SNAPSHOT_PROCESS_ROWS,
 )
 
-_FIELDS = ["pid", "name", "memory_info", "cpu_percent", "create_time", "username"]
+_FIELDS = ["pid", "name", "memory_info", "create_time"]
+# What the fast path needs. Measured at 2.3 ms against 764 ms once
+# memory_info is included, across 347 processes.
+_CORES = psutil.cpu_count(logical=True) or 1
+_CHEAP_FIELDS = ["pid", "name", "create_time"]
 
 
 class Sampler:
@@ -32,6 +36,9 @@ class Sampler:
         self._buffer = deque(maxlen=depth)
         self._procs = {}
         self._totals = {}
+        self._cpu_prev = {}
+        self._last_cpu_at = None
+        self._facts = None  # computed once per sample, read by the UI
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
@@ -54,29 +61,52 @@ class Sampler:
                 continue
 
     def sample(self):
+        """One pass over the process table.
+
+        Identity comes from psutil, which is cheap for pid, name and
+        create_time. Memory and CPU come from a single bulk syscall,
+        because psutil opens a handle per process for those two and that
+        cost 764 ms per pass, freezing the UI. See monitor/winproc.py for
+        why identity must NOT move to the same source.
+        """
+        bulk = winproc.memory_and_cpu()
+        now = time.monotonic()
+        elapsed = now - (self._last_cpu_at or now)
+        self._last_cpu_at = now
+
         seen = set()
         rows = []
-        for proc in psutil.process_iter(_FIELDS):
+        fields = _FIELDS if not bulk else _CHEAP_FIELDS
+        for proc in psutil.process_iter(fields):
             try:
                 info = proc.info
                 pid = info["pid"]
                 seen.add(pid)
-                cached = self._procs.get(pid)
-                if cached is None or cached.create_time() != info["create_time"]:
-                    cached = proc
-                    self._procs[pid] = proc
-                    cpu = 0.0
+                create_time = info["create_time"]
+
+                if bulk:
+                    stats = bulk.get(pid)
+                    rss = stats["rss"] if stats else 0
+                    cpu = self._cpu_percent(pid, create_time, stats, elapsed)
                 else:
-                    cpu = cached.cpu_percent(None)
-                mem = info["memory_info"]
+                    # Fallback path: the syscall is unavailable or failed.
+                    mem = info.get("memory_info")
+                    rss = mem.rss if mem else 0
+                    cached = self._procs.get(pid)
+                    if cached is None or cached.create_time() != create_time:
+                        self._procs[pid] = proc
+                        cpu = 0.0
+                    else:
+                        cpu = cached.cpu_percent(None)
+
                 rows.append(
                     {
                         "pid": pid,
                         "name": info["name"] or "",
-                        "rss": mem.rss if mem else 0,
+                        "rss": rss,
                         "cpu_percent": round(cpu, 1),
-                        "create_time": info["create_time"],
-                        "username": info["username"] or "",
+                        "create_time": create_time,
+                        "username": "",
                         "access": True,
                     }
                 )
@@ -100,6 +130,9 @@ class Sampler:
         for pid in list(self._procs):
             if pid not in seen:
                 del self._procs[pid]
+        for pid in list(self._cpu_prev):
+            if pid not in seen:
+                del self._cpu_prev[pid]
 
         vm = psutil.virtual_memory()
         totals = {
@@ -114,9 +147,35 @@ class Sampler:
         with self._lock:
             self._buffer.append(rows)
             self._totals = totals
+            self._facts = None  # stale the instant new data lands
 
+        self._build_facts()
         self._write_snapshot(rows, totals)
         return rows
+
+
+    def _cpu_percent(self, pid, create_time, stats, elapsed):
+        """Percent of one core since the previous sample.
+
+        psutil's cpu_percent does this internally off a per-process
+        handle. The same arithmetic over bulk CPU times costs nothing.
+        A process seen for the first time reports 0.0 rather than its
+        lifetime average, which would read as a spike that never happened.
+        """
+        if not stats:
+            return 0.0
+        previous = self._cpu_prev.get(pid)
+        # Record the baseline FIRST, always. Returning early on the very
+        # first pass (where elapsed is 0) skipped this, so no baseline
+        # existed and CPU stayed at zero until the third sample. Idle
+        # detection reads cpu_percent, so everything looked idle forever.
+        self._cpu_prev[pid] = (create_time, stats["cpu_ns"])
+        if elapsed <= 0 or previous is None or previous[0] != create_time:
+            return 0.0
+        delta_ns = stats["cpu_ns"] - previous[1]
+        if delta_ns <= 0:
+            return 0.0
+        return min((delta_ns / (elapsed * 1e9)) * 100.0, 100.0 * _CORES)
 
     def _write_snapshot(self, rows, totals):
         """Atomic write, so Claude never reads a half-written file.
@@ -166,10 +225,25 @@ class Sampler:
             return dict(self._totals)
 
     def facts(self):
+        """The cached result of the last sample.
+
+        Computed once per sample on the sampler thread. It used to be
+        recomputed by the UI on every refresh as well, which cost the Tk
+        main thread 55 ms of its 102 ms refresh for a second copy of
+        numbers that already existed.
+        """
+        with self._lock:
+            if self._facts is not None:
+                return self._facts
+        return self._build_facts()
+
+    def _build_facts(self):
         facts = analysis.build_facts(self.buffer_list(), self.totals(), self.interval)
         # members carry no information the UI needs and triple the payload
         for group in facts["groups"]:
             group.pop("members", None)
+        with self._lock:
+            self._facts = facts
         return facts
 
     def own_context(self):

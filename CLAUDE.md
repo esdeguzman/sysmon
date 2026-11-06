@@ -74,7 +74,7 @@ the user untick.
 
     python -m pytest
 
-207 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+224 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -88,6 +88,46 @@ way, because widgets are the part that cannot be tested headless.
 no CPU for the whole window but the window is still shorter than the five
 minute idle threshold. Calling that `active` stated the opposite of what was
 measured, which is the bug it exists to prevent.
+
+## Why the sampler does not use psutil for memory or CPU
+
+Dragging the window stalled for about a second and a half at a time.
+Measured with a 20 ms Tk heartbeat: **four stalls over 1.4 s in 14 seconds**.
+
+The cause was `sample()` taking **1499 ms** and running every 2 s, a 75
+percent duty cycle on the sampler thread. Per psutil field, across 347
+processes:
+
+| Fields | Cost |
+|---|---|
+| `pid`, `name`, `create_time` | 2.3 ms |
+| plus `memory_info` | 764 ms |
+| plus `cpu_percent` | 771 ms |
+
+psutil opens a handle per process for those two.
+`NtQuerySystemInformation(SystemProcessInformation)` returns all of them
+in one call: **6 ms**. `monitor/winproc.py` wraps it.
+
+**Identity deliberately still comes from psutil.** The syscall's
+`create_time` disagrees with psutil's at about 5e-7, and only 40 of 346
+matched exactly. `killer._gone` compares `create_time` to decide whether
+a process died, so taking identity from the syscall would have made every
+kill compare unequal, report "already gone", and quietly kill nothing.
+The names differ too: the syscall says "Memory Compression" where psutil
+says "MemCompression", and only the latter is in `BLOCKED_NAMES`.
+
+`facts()` is also cached per sample now. The UI was recomputing it every
+refresh, costing the Tk main thread 55 ms of its 102 ms for a second copy
+of numbers that already existed.
+
+After both: **sample 14.8 ms, worst main-loop stall 51 ms, no stall over
+100 ms.** RSS agrees with psutil to within 0.1 percent.
+
+`tests/test_sampler_cpu.py` guards the subtle half. cpu_percent is now
+computed from deltas in bulk CPU times, and the first version recorded no
+baseline on the opening pass, so nothing reported CPU until the third
+sample. Everything read as idle, which is what the whole suggestion
+engine runs on.
 
 ## build_facts must stay linear
 
