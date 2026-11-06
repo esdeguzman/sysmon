@@ -15,6 +15,7 @@ def _empty(error=None):
         "targets": [],
         "notes": "",
         "written_at": "",
+        "urgency": "",
         "error": error,
     }
 
@@ -47,5 +48,8 @@ def read_advice(path):
         "targets": targets,
         "notes": str(raw.get("notes") or ""),
         "written_at": str(raw.get("written_at") or ""),
+        # Lets Claude force an alert when live thresholds would not fire,
+        # for a leak or a runaway process on an otherwise quiet machine.
+        "urgency": str(raw.get("urgency") or "").lower(),
         "error": None,
     }

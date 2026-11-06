@@ -65,3 +65,18 @@ class TestReadAdvice:
         assert result["available"] is True
         assert result["targets"] == []
         assert result["summary"] == ""
+
+
+class TestUrgency:
+    def test_urgency_is_read_and_lowercased(self, tmp_path):
+        path = tmp_path / "advice.json"
+        path.write_text(json.dumps({"urgency": "HIGH"}), encoding="utf-8")
+        assert advice.read_advice(path)["urgency"] == "high"
+
+    def test_absent_urgency_defaults_to_empty(self, tmp_path):
+        path = tmp_path / "advice.json"
+        path.write_text("{}", encoding="utf-8")
+        assert advice.read_advice(path)["urgency"] == ""
+
+    def test_missing_file_has_an_urgency_key(self, tmp_path):
+        assert advice.read_advice(tmp_path / "nope.json")["urgency"] == ""

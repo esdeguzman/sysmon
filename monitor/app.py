@@ -10,11 +10,12 @@ background work posts its result back through `root.after`.
 """
 
 import threading
+import time
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
 
-from monitor import killer, safety, viewmodel as vm
+from monitor import attention, flash, killer, safety, viewmodel as vm
 from monitor.advice import read_advice
 from monitor.constants import ADVICE_PATH, BLOCKED_NAMES, BLOCKED_PIDS
 from monitor.sampler import Sampler
@@ -50,6 +51,8 @@ class SysmonApp:
         self.busy = False
         self.rows_by_name = {}
         self._row_widgets = []
+        self.alert_state = attention.AlertState()
+        self.alerting = False
 
         own_pid, ancestors = sampler.own_context()
         self.protected = safety.protected_pids(own_pid, ancestors)
@@ -66,6 +69,8 @@ class SysmonApp:
 
         self._build_sidebar()
         self._build_main()
+        # Looking at the window is the acknowledgement. Stop the flash.
+        root.bind("<FocusIn>", self._on_focus)
         self.refresh()
 
     # ---------------------------------------------------------------- layout
@@ -143,10 +148,22 @@ class SysmonApp:
         main = tk.Frame(self.root, bg=BG)
         main.pack(side="right", fill="both", expand=True)
 
-        meters = tk.Frame(main, bg=BG)
-        meters.pack(fill="x", padx=22, pady=(22, 10))
-        self.ram = self._meter(meters, "RAM", ACCENT)
-        self.cpu = self._meter(meters, "CPU", GOOD)
+        self.banner = tk.Label(
+            main,
+            text="",
+            bg=WARN,
+            fg="#1a1300",
+            font=self.f_head,
+            anchor="w",
+            padx=14,
+            pady=7,
+        )
+        # Packed and unpacked by _render_banner, so it takes no space when quiet.
+
+        self.meters = tk.Frame(main, bg=BG)
+        self.meters.pack(fill="x", padx=22, pady=(22, 10))
+        self.ram = self._meter(self.meters, "RAM", ACCENT)
+        self.cpu = self._meter(self.meters, "CPU", GOOD)
 
         panel = tk.Frame(main, bg=PANEL)
         panel.pack(fill="both", expand=True, padx=22, pady=(0, 22))
@@ -227,6 +244,7 @@ class SysmonApp:
             self._render_trend(groups, window_seconds)
             self._render_advice(advice)
             self._update_button(snapshot)
+            self._evaluate_attention(advice, facts.get("totals", {}), groups, snapshot)
         except Exception as exc:  # a render fault must not stop the clock
             self.lbl_window.configure(text=f"refresh error: {exc}")
         self.root.after(REFRESH_MS, self.refresh)
@@ -332,6 +350,34 @@ class SysmonApp:
                 ),
                 tags=(state,),
             )
+
+    # ------------------------------------------------------------- attention
+
+    def _evaluate_attention(self, advice, totals, groups, snapshot):
+        targets = vm.advice_checked_names(advice, snapshot)
+        reclaimable = attention.reclaimable_bytes(groups, targets)
+        active, reason = attention.should_alert(advice, totals, reclaimable)
+
+        if self.alert_state.update(active, attention.alert_key(advice), time.monotonic()):
+            # Flashing a window that is already in front is just noise.
+            if self.root.focus_displayof() is None:
+                flash.start(self.root)
+
+        self._render_banner(active, reason)
+        self.root.title(attention.title_for(active, reclaimable))
+        self.alerting = active
+
+    def _render_banner(self, active, reason):
+        if active and not self.banner.winfo_ismapped():
+            self.banner.pack(side="top", fill="x", before=self.meters)
+        elif not active and self.banner.winfo_ismapped():
+            self.banner.pack_forget()
+        if active:
+            self.banner.configure(text=f"⚠  {reason}")
+
+    def _on_focus(self, _event=None):
+        flash.stop(self.root)
+        self.alert_state.acknowledge(time.monotonic())
 
     def _render_advice(self, advice):
         if not advice.get("available"):

@@ -40,6 +40,11 @@ Write `data/advice.json`:
 `create_time` is required. Without it the PID reuse guard rejects the target.
 Copy it from the snapshot, never invent it.
 
+`urgency` is optional. Set it to `"high"` only when something needs looking at
+regardless of the RAM percentage, such as a confirmed leak or a runaway
+process. It bypasses both thresholds and flashes the taskbar, so it spends the
+user's attention directly. Leave it out and the app decides on its own.
+
 ## Rules
 
 - Never target a process in `BLOCKED_NAMES` (`monitor/constants.py`). The
@@ -63,7 +68,7 @@ the user untick.
 
     python -m pytest
 
-96 tests. `tests/test_killer.py` spawns and kills real throwaway Python
+127 tests. `tests/test_killer.py` spawns and kills real throwaway Python
 processes, so it takes about 6 seconds.
 
 ## Where the UI logic lives
@@ -77,6 +82,32 @@ way, because widgets are the part that cannot be tested headless.
 no CPU for the whole window but the window is still shorter than the five
 minute idle threshold. Calling that `active` stated the opposite of what was
 measured, which is the bug it exists to prevent.
+
+## Getting the user's attention
+
+`monitor/attention.py` decides when the app flashes its taskbar button, badges
+its title and shows a banner. The bar is deliberately high, because an alert
+that fires often is an alert that gets ignored:
+
+| Condition | Fires |
+|---|---|
+| RAM at or above 85 percent AND 1 GB or more reclaimable | yes |
+| RAM at or above 94 percent | yes, advice or not |
+| `urgency: "high"` in advice.json | yes, whatever the numbers say |
+| Anything else | no |
+
+Reclaimable is measured from the live sample, not from the advice's own
+`est_mb`, which goes stale as soon as an app grows or the user closes
+something.
+
+`AlertState` is edge-triggered: it fires when the condition appears, when the
+advice behind it changes, and once per 15 minute cooldown while it persists.
+Focusing the window acknowledges it. A condition that clears and returns
+flashes again.
+
+`monitor/flash.py` resolves the top-level window with `GetParent` before
+calling `FlashWindowEx`. Tk's `winfo_id()` returns an inner child window, and
+flashing that one succeeds, reports no error and blinks nothing.
 
 ## The web UI is still there
 
